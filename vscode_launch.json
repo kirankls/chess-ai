@@ -1,0 +1,46 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Frontend: Start React Dev Server",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceFolder}/frontend/node_modules/.bin/react-scripts",
+      "args": ["start"],
+      "cwd": "${workspaceFolder}/frontend",
+      "skipFiles": ["<node_internals>/**"],
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "neverOpen",
+      "env": {
+        "REACT_APP_API_URL": "http://localhost:5000/api"
+      },
+      "runtimeExecutable": "node",
+      "outputCapture": "console"
+    },
+    {
+      "name": "Backend: Flask Server",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/backend/app.py",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}/backend",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/backend",
+        "FLASK_APP": "app.py",
+        "FLASK_ENV": "development"
+      },
+      "jinja": true,
+      "justMyCode": true
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Full App: Frontend + Backend",
+      "configurations": [
+        "Backend: Flask Server",
+        "Frontend: Start React Dev Server"
+      ],
+      "stopAll": true
+    }
+  ]
+}

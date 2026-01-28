@@ -1,0 +1,58 @@
+{
+  "editor.formatOnSave": true,
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "[python]": {
+    "editor.defaultFormatter": "ms-python.python",
+    "editor.formatOnSave": true
+  },
+  "[javascript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[react]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "python.linting.enabled": true,
+  "python.linting.pylintEnabled": true,
+  "python.linting.pylintArgs": ["--disable=C0111"],
+  "python.formatting.provider": "black",
+  "python.pythonPath": "${workspaceFolder}/backend/venv/bin/python",
+  "python.terminal.executeInFileDir": true,
+  "python.envFile": "${workspaceFolder}/backend/.env",
+  "npm.useSameTerminalForScripts": true,
+  "npm.packageManager": "npm",
+  "editor.wordWrap": "on",
+  "editor.tabSize": 2,
+  "editor.insertSpaces": true,
+  "files.exclude": {
+    "**/__pycache__": true,
+    "**/node_modules": true,
+    "**/.pytest_cache": true,
+    "**/venv": false
+  },
+  "search.exclude": {
+    "**/__pycache__": true,
+    "**/node_modules": true,
+    "**/.pytest_cache": true,
+    "**/venv": true,
+    "**/dist": true,
+    "**/build": true
+  },
+  "terminal.integrated.env.windows": {
+    "NODE_PATH": "${workspaceFolder}/frontend/node_modules"
+  },
+  "terminal.integrated.env.osx": {
+    "NODE_PATH": "${workspaceFolder}/frontend/node_modules"
+  },
+  "terminal.integrated.env.linux": {
+    "NODE_PATH": "${workspaceFolder}/frontend/node_modules"
+  },
+  "extensions.recommendations": [
+    "ms-python.python",
+    "ms-python.vscode-pylance",
+    "esbenp.prettier-vscode",
+    "dbaeumer.vscode-eslint",
+    "formulahendry.code-runner",
+    "thunder-bookmarks.thunder-bookmarks",
+    "MongoDB.mongodb-vscode"
+  ]
+}
