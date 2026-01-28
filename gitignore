@@ -1,0 +1,219 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environment
+venv/
+ENV/
+env/
+.venv
+backend/venv/
+backend/env/
+backend/.venv
+
+# Flask
+instance/
+.webassets-cache
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+chess.db
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+backend/.env
+frontend/.env
+.env.production.local
+
+# Node/npm
+node_modules/
+.npm
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npmrc
+package-lock.json
+yarn.lock
+
+# Build outputs
+dist/
+build/
+frontend/build/
+frontend/dist/
+
+# IDE
+.vscode/
+.vscode/settings.json
+.vscode/launch.json
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+.sublime-project
+.sublime-workspace
+*.iml
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# Logs
+logs/
+*.log
+npm-debug.log
+yarn-debug.log
+yarn-error.log
+lerna-debug.log
+*.log
+
+# Misc
+.cache/
+.parcel-cache
+.next
+out/
+.nuxt
+dist/
+.cache/
+.vuepress/dist/
+.serverless/
+.fusebox/
+.dynamodb/
+.tern-port
+
+# Mac
+.AppleDouble
+.LSOverride
+._*
+.apdisk
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Linux
+.directory
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.hypothesis/
+
+# Production
+.env.production
+.env.production.local
+
+# Optional npm cache directory
+.npm
+
+# Optional eslint cache
+.eslintcache
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Celery stuff
+celerybeat-schedule
+celerybeat.pid
+
+# SageMath parsed files
+.sage.py
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# pyenv
+.python-version
+
+# Pipfile.lock
+Pipfile.lock
+
+# PEP 582
+__pypackages__/
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
+*~
+
+# Local development
+.vscode/launch.json
+.vscode/settings.json
+
+# Front-end
+frontend/node_modules
+frontend/build
+frontend/dist
+frontend/.env.local
+frontend/.env.*.local
+
+# Back-end
+backend/venv
+backend/.env
+backend/chess.db
+backend/__pycache__
+backend/*.pyc
+
+# Project specific
+.idea/
+*.iml
+out/
+
+# Archives
+*.zip
+*.rar
+*.7z
+*.tar.gz
+
+# Backup files
+*.bak
+*.backup
+*~
+
+# Temporary directories
+tmp/
+temp/
