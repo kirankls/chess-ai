@@ -22,6 +22,7 @@ const ChessApp = () => {
   const [gameMessage, setGameMessage] = useState('');
   const [aiThinking, setAiThinking] = useState(false);
   const [promotionDialog, setPromotionDialog] = useState(null);
+  const [capturedPieces, setCapturedPieces] = useState({ white: [], black: [] });
 
   const apiClient = axios.create({ baseURL: API_BASE_URL });
 
@@ -98,6 +99,19 @@ const ChessApp = () => {
     board[7][7] = { type: 'rook', color: 'white' };
     
     return board;
+  }
+
+  // Get piece symbol for captured pieces display
+  function getPieceSymbol(type, color) {
+    const symbols = {
+      pawn: color === 'white' ? '♙' : '♟',
+      rook: color === 'white' ? '♖' : '♜',
+      knight: color === 'white' ? '♘' : '♞',
+      bishop: color === 'white' ? '♗' : '♝',
+      queen: color === 'white' ? '♕' : '♛',
+      king: color === 'white' ? '♔' : '♚'
+    };
+    return symbols[type] || '';
   }
 
   // Find king
@@ -313,20 +327,18 @@ const ChessApp = () => {
     return score;
   }
 
-  // Score moves for ordering (best moves first = faster pruning)
+  // Score moves for ordering
   function scoreMoveForOrdering(boardState, fromR, fromC, toR, toC) {
     let score = 0;
     const piece = boardState[fromR][fromC];
     const target = boardState[toR][toC];
 
-    // Captures are good (by victim value - attacker value)
     if (target) {
       const victimValues = { pawn: 1, knight: 3, bishop: 3, rook: 5, queen: 9 };
       const attackerValues = { pawn: 1, knight: 3, bishop: 3, rook: 5, queen: 9 };
       score += victimValues[target.type] * 10 - attackerValues[piece.type];
     }
 
-    // Promote pawns
     if (piece.type === 'pawn') {
       if ((piece.color === 'black' && toR === 7) || (piece.color === 'white' && toR === 0)) {
         score += 800;
@@ -336,13 +348,12 @@ const ChessApp = () => {
     return score;
   }
 
-  // Optimized minimax with alpha-beta and move ordering
+  // Optimized minimax
   function minimax(boardState, depth, alpha, beta, isMaximizing, maxDepth) {
     if (depth === maxDepth) {
       return evaluatePosition(boardState, 'black');
     }
 
-    // Terminal node checks
     if (isCheckmate(boardState, 'white')) return 10000 + depth;
     if (isCheckmate(boardState, 'black')) return -10000 - depth;
     if (isStalemate(boardState, isMaximizing ? 'black' : 'white')) return 0;
@@ -350,7 +361,6 @@ const ChessApp = () => {
     const color = isMaximizing ? 'black' : 'white';
     let bestValue = isMaximizing ? -Infinity : Infinity;
     
-    // Generate and sort moves (best first)
     let moves = [];
     for (let r = 0; r < 8; r++) {
       for (let c = 0; c < 8; c++) {
@@ -368,17 +378,14 @@ const ChessApp = () => {
       }
     }
     
-    // Sort by score (best moves first)
     moves.sort((a, b) => b.score - a.score);
 
-    // Search moves
     for (let moveObj of moves) {
       const newBoard = boardState.map(row => [...row]);
       const piece = newBoard[moveObj.from[0]][moveObj.from[1]];
       newBoard[moveObj.to[0]][moveObj.to[1]] = piece;
       newBoard[moveObj.from[0]][moveObj.from[1]] = null;
 
-      // Auto-promote
       if (newBoard[moveObj.to[0]][moveObj.to[1]].type === 'pawn') {
         if ((color === 'black' && moveObj.to[0] === 7) || (color === 'white' && moveObj.to[0] === 0)) {
           newBoard[moveObj.to[0]][moveObj.to[1]] = { type: 'queen', color: color };
@@ -395,22 +402,20 @@ const ChessApp = () => {
         beta = Math.min(beta, value);
       }
 
-      if (beta <= alpha) break; // Alpha-beta pruning
+      if (beta <= alpha) break;
     }
 
     return bestValue;
   }
 
-  // Find best move - OPTIMIZED
+  // Find best move
   function findBestAIMove(boardState) {
     let bestMove = null;
     let bestValue = -Infinity;
     
-    // Reduced depth for faster play
     const depths = { easy: 1, medium: 2, hard: 3 };
     const maxDepth = depths[difficulty];
 
-    // Generate moves
     let moves = [];
     for (let r = 0; r < 8; r++) {
       for (let c = 0; c < 8; c++) {
@@ -428,10 +433,8 @@ const ChessApp = () => {
       }
     }
 
-    // Sort by heuristic (best moves first)
     moves.sort((a, b) => b.score - a.score);
     
-    // Evaluate top moves only
     const limit = difficulty === 'easy' ? 8 : difficulty === 'medium' ? 12 : moves.length;
     
     for (let i = 0; i < Math.min(limit, moves.length); i++) {
@@ -441,7 +444,6 @@ const ChessApp = () => {
       newBoard[moveObj.to[0]][moveObj.to[1]] = piece;
       newBoard[moveObj.from[0]][moveObj.from[1]] = null;
 
-      // Auto-promote
       if (newBoard[moveObj.to[0]][moveObj.to[1]].type === 'pawn' && moveObj.to[0] === 7) {
         newBoard[moveObj.to[0]][moveObj.to[1]] = { type: 'queen', color: 'black' };
       }
@@ -518,6 +520,15 @@ const ChessApp = () => {
   const makeMove = (fromRow, fromCol, toRow, toCol) => {
     const newBoard = board.map(row => [...row]);
     const piece = newBoard[fromRow][fromCol];
+    const capturedPiece = newBoard[toRow][toCol];
+    
+    // Track captured piece
+    if (capturedPiece) {
+      setCapturedPieces(prev => ({
+        ...prev,
+        white: [...prev.white, capturedPiece]
+      }));
+    }
     
     newBoard[toRow][toCol] = piece;
     newBoard[fromRow][fromCol] = null;
@@ -567,6 +578,15 @@ const ChessApp = () => {
       if (bestMove) {
         const newBoard = boardState.map(row => [...row]);
         const piece = newBoard[bestMove.from[0]][bestMove.from[1]];
+        const capturedPiece = newBoard[bestMove.to[0]][bestMove.to[1]];
+        
+        // Track captured piece
+        if (capturedPiece) {
+          setCapturedPieces(prev => ({
+            ...prev,
+            black: [...prev.black, capturedPiece]
+          }));
+        }
         
         newBoard[bestMove.to[0]][bestMove.to[1]] = piece;
         newBoard[bestMove.from[0]][bestMove.from[1]] = null;
@@ -685,6 +705,61 @@ const ChessApp = () => {
             );
           })
         )}
+      </div>
+    );
+  };
+
+  // Render captured pieces
+  const renderCapturedPieces = (color) => {
+    const pieces = capturedPieces[color];
+    const pieceValue = { pawn: 1, knight: 3, bishop: 3, rook: 5, queen: 9 };
+    const totalValue = pieces.reduce((sum, piece) => sum + pieceValue[piece.type], 0);
+    
+    return (
+      <div style={{
+        backgroundColor: '#252541',
+        padding: '15px',
+        borderRadius: '8px',
+        marginBottom: '15px'
+      }}>
+        <h4 style={{ margin: '0 0 10px 0', color: color === 'white' ? '#2ecc71' : '#e74c3c', fontSize: '14px' }}>
+          {color === 'white' ? 'WHITE CAPTURES' : 'BLACK CAPTURES'}
+        </h4>
+        <div style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: '5px',
+          minHeight: '30px'
+        }}>
+          {pieces.length > 0 ? (
+            <>
+              {pieces.map((piece, i) => (
+                <span
+                  key={i}
+                  style={{
+                    fontSize: '20px',
+                    padding: '4px 6px',
+                    backgroundColor: '#1a1a2e',
+                    borderRadius: '4px'
+                  }}
+                >
+                  {getPieceSymbol(piece.type, color)}
+                </span>
+              ))}
+              <span style={{
+                fontSize: '12px',
+                color: '#999',
+                marginLeft: 'auto',
+                display: 'flex',
+                alignItems: 'center'
+              }}>
+                Points: {totalValue}
+              </span>
+            </>
+          ) : (
+            <span style={{ fontSize: '12px', color: '#666' }}>No captures yet</span>
+          )}
+        </div>
       </div>
     );
   };
@@ -931,6 +1006,7 @@ const ChessApp = () => {
               setDifficulty(level);
               setBoard(initializeBoard());
               setMoveHistory([]);
+              setCapturedPieces({ white: [], black: [] });
               setCurrentTurn('white');
               setGameStatus('ongoing');
               setGameMessage('');
@@ -986,7 +1062,16 @@ const ChessApp = () => {
         display: 'flex',
         justifyContent: 'center'
       }}>
-        <div style={{ display: 'flex', gap: '30px', maxWidth: '1200px' }}>
+        <div style={{ display: 'flex', gap: '20px', maxWidth: '1400px', width: '100%' }}>
+          {/* Left side - Black captures */}
+          <div style={{ width: '200px' }}>
+            <div style={{ color: '#eee', textAlign: 'center', marginBottom: '20px' }}>
+              <h3 style={{ color: '#e74c3c', margin: '0 0 10px 0' }}>🎯 AI (BLACK)</h3>
+            </div>
+            {renderCapturedPieces('black')}
+          </div>
+
+          {/* Center - Board and Game Info */}
           <div>
             <div style={{
               display: 'flex',
@@ -1045,6 +1130,7 @@ const ChessApp = () => {
                 onClick={() => {
                   setBoard(initializeBoard());
                   setMoveHistory([]);
+                  setCapturedPieces({ white: [], black: [] });
                   setCurrentTurn('white');
                   setGameStatus('ongoing');
                   setGameMessage('');
@@ -1077,43 +1163,51 @@ const ChessApp = () => {
                 EXIT
               </button>
             </div>
+
+            <div style={{
+              marginTop: '15px',
+              backgroundColor: '#1a1a2e',
+              padding: '20px',
+              borderRadius: '8px',
+              width: '480px'
+            }}>
+              <h3 style={{ marginTop: 0, marginBottom: '15px', color: '#f39c12' }}>Move History</h3>
+              <div style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '8px',
+                maxHeight: '300px',
+                overflowY: 'auto'
+              }}>
+                {moveHistory.length > 0 ? (
+                  moveHistory.map((move, i) => (
+                    <div
+                      key={i}
+                      style={{
+                        padding: '8px 12px',
+                        backgroundColor: '#252541',
+                        borderRadius: '6px',
+                        fontSize: '13px',
+                        color: '#ddd',
+                        borderLeft: `3px solid ${i % 2 === 0 ? '#2ecc71' : '#e74c3c'}`
+                      }}
+                    >
+                      <span style={{ color: '#f39c12', fontWeight: 'bold' }}>{i + 1}.</span> {move}
+                    </div>
+                  ))
+                ) : (
+                  <p style={{ color: '#999', fontSize: '12px' }}>No moves yet</p>
+                )}
+              </div>
+            </div>
           </div>
 
-          <div style={{
-            backgroundColor: '#1a1a2e',
-            padding: '20px',
-            borderRadius: '8px',
-            width: '250px',
-            height: 'fit-content'
-          }}>
-            <h3 style={{ marginTop: 0, marginBottom: '15px', color: '#f39c12' }}>Move History</h3>
-            <div style={{
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '8px',
-              maxHeight: '600px',
-              overflowY: 'auto'
-            }}>
-              {moveHistory.length > 0 ? (
-                moveHistory.map((move, i) => (
-                  <div
-                    key={i}
-                    style={{
-                      padding: '8px 12px',
-                      backgroundColor: '#252541',
-                      borderRadius: '6px',
-                      fontSize: '13px',
-                      color: '#ddd',
-                      borderLeft: `3px solid ${i % 2 === 0 ? '#2ecc71' : '#e74c3c'}`
-                    }}
-                  >
-                    <span style={{ color: '#f39c12', fontWeight: 'bold' }}>{i + 1}.</span> {move}
-                  </div>
-                ))
-              ) : (
-                <p style={{ color: '#999', fontSize: '12px' }}>No moves yet</p>
-              )}
+          {/* Right side - White captures */}
+          <div style={{ width: '200px' }}>
+            <div style={{ color: '#eee', textAlign: 'center', marginBottom: '20px' }}>
+              <h3 style={{ color: '#2ecc71', margin: '0 0 10px 0' }}>👤 YOU (WHITE)</h3>
             </div>
+            {renderCapturedPieces('white')}
           </div>
         </div>
       </div>
