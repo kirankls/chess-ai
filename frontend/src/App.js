@@ -19,6 +19,7 @@ const ChessApp = () => {
   const [moveHistory, setMoveHistory] = useState([]);
   const [currentTurn, setCurrentTurn] = useState('white');
   const [gameStatus, setGameStatus] = useState('ongoing');
+  const [gameMessage, setGameMessage] = useState('');
   const [aiThinking, setAiThinking] = useState(false);
 
   const apiClient = axios.create({ baseURL: API_BASE_URL });
@@ -53,47 +54,45 @@ const ChessApp = () => {
     return board;
   }
 
-  // Render piece with much larger size
-  function renderPiece(piece) {
-    if (!piece) return null;
-
-    const isBlack = piece.color === 'black';
-    const pieceSize = 90; // Much larger!
-
-    // Piece symbols - black pieces are much darker, white pieces are much lighter
-    const symbols = {
-      pawn: isBlack ? '♟' : '♙',
-      rook: isBlack ? '♜' : '♖',
-      knight: isBlack ? '♞' : '♘',
-      bishop: isBlack ? '♝' : '♗',
-      queen: isBlack ? '♛' : '♕',
-      king: isBlack ? '♚' : '♔'
-    };
-
-    return (
-      <div
-        style={{
-          fontSize: pieceSize,
-          fontWeight: 'bold',
-          color: isBlack ? '#000000' : '#FFFFFF',
-          textShadow: isBlack 
-            ? '0 0 0 2px #000000, 0 0 3px rgba(0,0,0,0.8)' 
-            : '0 0 0 2px #CCCCCC, 0 0 3px rgba(100,100,100,0.5)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          width: '100%',
-          height: '100%',
-          filter: isBlack ? 'brightness(0.9)' : 'brightness(1.1)'
-        }}
-      >
-        {symbols[piece.type]}
-      </div>
-    );
+  // Find king position
+  function findKing(boardState, color) {
+    for (let r = 0; r < 8; r++) {
+      for (let c = 0; c < 8; c++) {
+        const piece = boardState[r][c];
+        if (piece && piece.type === 'king' && piece.color === color) {
+          return [r, c];
+        }
+      }
+    }
+    return null;
   }
 
-  // Get all moves
-  function getAllMovesForPiece(boardState, row, col) {
+  // Check if square is attacked by opponent
+  function isSquareAttacked(boardState, row, col, byColor) {
+    for (let r = 0; r < 8; r++) {
+      for (let c = 0; c < 8; c++) {
+        const piece = boardState[r][c];
+        if (piece && piece.color === byColor) {
+          const moves = getAllPseudoLegalMoves(boardState, r, c);
+          if (moves.some(move => move[0] === row && move[1] === col)) {
+            return true;
+          }
+        }
+      }
+    }
+    return false;
+  }
+
+  // Check if king is in check
+  function isKingInCheck(boardState, color) {
+    const kingPos = findKing(boardState, color);
+    if (!kingPos) return false;
+    const opponentColor = color === 'white' ? 'black' : 'white';
+    return isSquareAttacked(boardState, kingPos[0], kingPos[1], opponentColor);
+  }
+
+  // Get pseudo-legal moves (without check validation)
+  function getAllPseudoLegalMoves(boardState, row, col) {
     const piece = boardState[row][col];
     if (!piece) return [];
 
@@ -177,86 +176,107 @@ const ChessApp = () => {
     return moves;
   }
 
-  // Smart AI move selection
-  function findBestAIMove(boardState) {
-    let moveOptions = [];
-    const pieceValues = { pawn: 1, knight: 3, bishop: 3, rook: 5, queen: 9, king: 1000 };
-    
-    // Generate all possible moves
+  // Get legal moves (filter out moves that leave king in check)
+  function getLegalMoves(boardState, row, col) {
+    const piece = boardState[row][col];
+    if (!piece) return [];
+
+    const pseudoMoves = getAllPseudoLegalMoves(boardState, row, col);
+    const legalMoves = [];
+
+    for (let move of pseudoMoves) {
+      // Simulate the move
+      const testBoard = boardState.map(r => [...r]);
+      testBoard[move[0]][move[1]] = testBoard[row][col];
+      testBoard[row][col] = null;
+
+      // Check if king is in check after this move
+      if (!isKingInCheck(testBoard, piece.color)) {
+        legalMoves.push(move);
+      }
+    }
+
+    return legalMoves;
+  }
+
+  // Check checkmate
+  function isCheckmate(boardState, color) {
+    // Must be in check
+    if (!isKingInCheck(boardState, color)) return false;
+
+    // Must have no legal moves
     for (let r = 0; r < 8; r++) {
       for (let c = 0; c < 8; c++) {
         const piece = boardState[r][c];
-        if (piece && piece.color === 'black') {
-          const moves = getAllMovesForPiece(boardState, r, c);
-          
-          for (let move of moves) {
-            let moveScore = 0;
-
-            // Check what we can capture
-            const target = boardState[move[0]][move[1]];
-            if (target) {
-              moveScore += pieceValues[target.type] * 10; // Prioritize captures
-            }
-
-            // Pawn promotion
-            if (piece.type === 'pawn' && move[0] === 7) {
-              moveScore += 80; // Very high priority
-            }
-
-            // Center control (rows/cols 3-4)
-            const centerBonus = (3 <= move[1] && move[1] <= 4) && (3 <= move[0] && move[0] <= 4) ? 3 : 0;
-            moveScore += centerBonus;
-
-            // Pawn advancement
-            if (piece.type === 'pawn' && move[0] > r) {
-              moveScore += 2;
-            }
-
-            // Piece protection
-            let protectedCount = 0;
-            for (let pr = 0; pr < 8; pr++) {
-              for (let pc = 0; pc < 8; pc++) {
-                const protector = boardState[pr][pc];
-                if (protector && protector.color === 'black' && (pr !== r || pc !== c)) {
-                  const protectorMoves = getAllMovesForPiece(boardState, pr, pc);
-                  if (protectorMoves.some(m => m[0] === move[0] && m[1] === move[1])) {
-                    protectedCount++;
-                  }
-                }
-              }
-            }
-            moveScore += protectedCount;
-
-            moveOptions.push({
-              from: [r, c],
-              to: move,
-              score: moveScore,
-              isCapture: !!target,
-              piece: piece.type
-            });
+        if (piece && piece.color === color) {
+          const moves = getLegalMoves(boardState, r, c);
+          if (moves.length > 0) {
+            return false; // Found a legal move
           }
         }
       }
     }
 
-    if (moveOptions.length === 0) return null;
+    return true; // No legal moves and in check = checkmate
+  }
 
-    // Sort by score (highest first)
-    moveOptions.sort((a, b) => b.score - a.score);
+  // Check stalemate
+  function isStalemate(boardState, color) {
+    // Must NOT be in check
+    if (isKingInCheck(boardState, color)) return false;
 
-    // Difficulty-based selection
-    if (difficulty === 'easy') {
-      // Play one of the random decent moves
-      const topMoves = moveOptions.slice(0, Math.min(8, moveOptions.length));
-      return topMoves[Math.floor(Math.random() * topMoves.length)];
-    } else if (difficulty === 'medium') {
-      // Play from top 3 good moves
-      const topMoves = moveOptions.slice(0, Math.min(3, moveOptions.length));
-      return topMoves[Math.floor(Math.random() * topMoves.length)];
-    } else {
-      // Play the best move (hard)
-      return moveOptions[0];
+    // Must have no legal moves
+    for (let r = 0; r < 8; r++) {
+      for (let c = 0; c < 8; c++) {
+        const piece = boardState[r][c];
+        if (piece && piece.color === color) {
+          const moves = getLegalMoves(boardState, r, c);
+          if (moves.length > 0) {
+            return false;
+          }
+        }
+      }
     }
+
+    return true;
+  }
+
+  // Render piece
+  function renderPiece(piece) {
+    if (!piece) return null;
+
+    const isBlack = piece.color === 'black';
+    const pieceSize = 90;
+
+    const symbols = {
+      pawn: isBlack ? '♟' : '♙',
+      rook: isBlack ? '♜' : '♖',
+      knight: isBlack ? '♞' : '♘',
+      bishop: isBlack ? '♝' : '♗',
+      queen: isBlack ? '♛' : '♕',
+      king: isBlack ? '♚' : '♔'
+    };
+
+    return (
+      <div
+        style={{
+          fontSize: pieceSize,
+          fontWeight: 'bold',
+          color: isBlack ? '#000000' : '#FFFFFF',
+          textShadow: isBlack 
+            ? '0 0 0 2px #000000, 0 0 3px rgba(0,0,0,0.8)' 
+            : '0 0 0 2px #CCCCCC, 0 0 3px rgba(100,100,100,0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          width: '100%',
+          height: '100%',
+          filter: isBlack ? 'brightness(0.9)' : 'brightness(1.1)'
+        }}
+      >
+        {symbols[piece.type]}
+      </div>
+    );
   }
 
   // Handle square click
@@ -267,7 +287,7 @@ const ChessApp = () => {
 
     if (piece && piece.color === 'white') {
       setSelectedSquare([row, col]);
-      setLegalMoves(getAllMovesForPiece(board, row, col));
+      setLegalMoves(getLegalMoves(board, row, col));
       return;
     }
 
@@ -298,7 +318,19 @@ const ChessApp = () => {
     setLegalMoves([]);
     setCurrentTurn('black');
 
+    // Check if black is in checkmate or stalemate
     setTimeout(() => {
+      if (isCheckmate(newBoard, 'black')) {
+        setGameStatus('white_wins');
+        setGameMessage('White wins! Black is checkmate!');
+        return;
+      }
+      if (isStalemate(newBoard, 'black')) {
+        setGameStatus('draw');
+        setGameMessage('Draw! Black is in stalemate!');
+        return;
+      }
+
       makeAIMove(newBoard);
     }, 1200);
   };
@@ -320,12 +352,97 @@ const ChessApp = () => {
         setBoard(newBoard);
         const moveNotation = `AI: ${String.fromCharCode(97 + bestMove.from[1])}${8 - bestMove.from[0]} → ${String.fromCharCode(97 + bestMove.to[1])}${8 - bestMove.to[0]}`;
         setMoveHistory(prev => [...prev, moveNotation]);
+        
+        // Check if white is in checkmate or stalemate
+        if (isCheckmate(newBoard, 'white')) {
+          setGameStatus('black_wins');
+          setGameMessage('Black wins! White is checkmate!');
+          setAiThinking(false);
+          return;
+        }
+        if (isStalemate(newBoard, 'white')) {
+          setGameStatus('draw');
+          setGameMessage('Draw! White is in stalemate!');
+          setAiThinking(false);
+          return;
+        }
+
         setCurrentTurn('white');
       }
 
       setAiThinking(false);
     }, 800);
   };
+
+  // Find best AI move
+  function findBestAIMove(boardState) {
+    let moveOptions = [];
+    const pieceValues = { pawn: 1, knight: 3, bishop: 3, rook: 5, queen: 9, king: 1000 };
+    
+    for (let r = 0; r < 8; r++) {
+      for (let c = 0; c < 8; c++) {
+        const piece = boardState[r][c];
+        if (piece && piece.color === 'black') {
+          const moves = getLegalMoves(boardState, r, c);
+          
+          for (let move of moves) {
+            let moveScore = 0;
+
+            // Check for checkmate
+            const testBoard = boardState.map(row => [...row]);
+            testBoard[move[0]][move[1]] = piece;
+            testBoard[r][c] = null;
+
+            if (isCheckmate(testBoard, 'white')) {
+              moveScore += 10000; // Highest priority
+            } else if (isStalemate(testBoard, 'white')) {
+              moveScore += 500; // Good, but not as good as checkmate
+            }
+
+            // Capture pieces
+            const target = boardState[move[0]][move[1]];
+            if (target) {
+              moveScore += pieceValues[target.type] * 10;
+            }
+
+            // Pawn promotion
+            if (piece.type === 'pawn' && move[0] === 7) {
+              moveScore += 80;
+            }
+
+            // Center control
+            const centerBonus = (3 <= move[1] && move[1] <= 4) && (3 <= move[0] && move[0] <= 4) ? 3 : 0;
+            moveScore += centerBonus;
+
+            // Pawn advancement
+            if (piece.type === 'pawn' && move[0] > r) {
+              moveScore += 2;
+            }
+
+            moveOptions.push({
+              from: [r, c],
+              to: move,
+              score: moveScore
+            });
+          }
+        }
+      }
+    }
+
+    if (moveOptions.length === 0) return null;
+
+    moveOptions.sort((a, b) => b.score - a.score);
+
+    if (difficulty === 'easy') {
+      const topMoves = moveOptions.slice(0, Math.min(8, moveOptions.length));
+      return topMoves[Math.floor(Math.random() * topMoves.length)];
+    } else if (difficulty === 'medium') {
+      const topMoves = moveOptions.slice(0, Math.min(3, moveOptions.length));
+      return topMoves[Math.floor(Math.random() * topMoves.length)];
+    } else {
+      return moveOptions[0];
+    }
+  }
 
   // Auth
   const handleLogin = async (e) => {
@@ -365,7 +482,7 @@ const ChessApp = () => {
 
   // Render board
   const renderBoard = () => {
-    const squareSize = 90; // Larger squares for larger pieces
+    const squareSize = 90;
     return (
       <div style={{
         display: 'grid',
@@ -601,6 +718,7 @@ const ChessApp = () => {
               setMoveHistory([]);
               setCurrentTurn('white');
               setGameStatus('ongoing');
+              setGameMessage('');
               setSelectedSquare(null);
               setLegalMoves([]);
               setGameMode('playing');
@@ -643,6 +761,8 @@ const ChessApp = () => {
 
   // GAME
   if (gameMode === 'playing') {
+    const isGameOver = gameStatus !== 'ongoing';
+    
     return (
       <div style={{
         padding: '20px',
@@ -680,15 +800,27 @@ const ChessApp = () => {
               marginBottom: '15px',
               backgroundColor: '#1a1a2e',
               padding: '15px',
-              borderRadius: '8px'
+              borderRadius: '8px',
+              border: isGameOver ? '2px solid #f39c12' : 'none'
             }}>
-              <p style={{ marginBottom: '5px' }}>
-                Current Turn: <strong style={{ color: currentTurn === 'white' ? '#2ecc71' : '#e74c3c' }}>
-                  {currentTurn === 'white' ? '♔ WHITE' : '♚ BLACK'}
-                </strong>
-              </p>
-              <p>Moves: {moveHistory.length}</p>
-              {aiThinking && <p style={{ color: '#f39c12', fontWeight: 'bold' }}>🤖 Thinking...</p>}
+              {isGameOver ? (
+                <div>
+                  <p style={{ fontSize: '20px', fontWeight: 'bold', color: '#f39c12', marginBottom: '5px' }}>
+                    {gameMessage}
+                  </p>
+                  <p style={{ marginTop: '10px' }}>Game Over!</p>
+                </div>
+              ) : (
+                <div>
+                  <p style={{ marginBottom: '5px' }}>
+                    Current Turn: <strong style={{ color: currentTurn === 'white' ? '#2ecc71' : '#e74c3c' }}>
+                      {currentTurn === 'white' ? '♔ WHITE' : '♚ BLACK'}
+                    </strong>
+                  </p>
+                  <p>Moves: {moveHistory.length}</p>
+                  {aiThinking && <p style={{ color: '#f39c12', fontWeight: 'bold' }}>🤖 Thinking...</p>}
+                </div>
+              )}
             </div>
 
             {renderBoard()}
@@ -700,6 +832,7 @@ const ChessApp = () => {
                   setMoveHistory([]);
                   setCurrentTurn('white');
                   setGameStatus('ongoing');
+                  setGameMessage('');
                   setSelectedSquare(null);
                   setLegalMoves([]);
                 }}
