@@ -582,5 +582,21 @@ def create_tables():
     db.create_all()
 
 
+# ========================
+# HEALTH CHECK ENDPOINT
+# ========================
+
+@app.route('/api/health', methods=['GET'])
+def health_check():
+    """Health check endpoint"""
+    try:
+        # Test database connection
+        db.session.execute('SELECT 1')
+        return jsonify({'status': 'healthy', 'message': 'Backend is running'}), 200
+    except Exception as e:
+        return jsonify({'status': 'unhealthy', 'error': str(e)}), 500
+
+
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    # Only run with debug=False in production (gunicorn is used)
+    app.run(debug=False, host='0.0.0.0', port=5000)
