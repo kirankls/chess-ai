@@ -12,7 +12,7 @@ const ChessApp = () => {
   const [isRegistering, setIsRegistering] = useState(false);
 
   const [gameMode, setGameMode] = useState('menu');
-  const [screenMode, setScreenMode] = useState('home'); // home, menu, playing, training, saved-games
+  const [screenMode, setScreenMode] = useState('home');
   const [difficulty, setDifficulty] = useState('medium');
   const [trainingTopic, setTrainingTopic] = useState(null);
   const [board, setBoard] = useState(initializeBoard());
@@ -26,9 +26,27 @@ const ChessApp = () => {
   const [promotionDialog, setPromotionDialog] = useState(null);
   const [capturedPieces, setCapturedPieces] = useState({ white: [], black: [] });
   const [savedGames, setSavedGames] = useState([]);
+  const [leaderboard, setLeaderboard] = useState({ easy: [], medium: [], hard: [] });
   const [gameId, setGameId] = useState(Date.now());
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const [showCapturesOnMobile, setShowCapturesOnMobile] = useState(false);
 
   const apiClient = axios.create({ baseURL: API_BASE_URL });
+
+  // Handle window resize
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // Load leaderboard
+  useEffect(() => {
+    const savedLeaderboard = JSON.parse(localStorage.getItem('chessLeaderboard') || '{"easy":[],"medium":[],"hard":[]}');
+    setLeaderboard(savedLeaderboard);
+  }, []);
 
   // Piece square tables
   const pawnTable = [
@@ -75,7 +93,6 @@ const ChessApp = () => {
     [0, 0, 0, 5, 5, 0, 0, 0]
   ];
 
-  // Training lessons
   const trainingLessons = {
     'piece-movements': {
       title: 'Piece Movements',
@@ -169,7 +186,27 @@ const ChessApp = () => {
     return board;
   }
 
-  // Save game to localStorage
+  // Record win
+  function recordWinOnLeaderboard() {
+    const newLeaderboard = { ...leaderboard };
+    const playerName = currentPlayer?.username || 'Anonymous';
+    
+    const entry = {
+      playerName: playerName,
+      date: new Date().toLocaleDateString(),
+      moves: moveHistory.length,
+      timestamp: Date.now()
+    };
+
+    newLeaderboard[difficulty].push(entry);
+    newLeaderboard[difficulty].sort((a, b) => a.moves - b.moves);
+    newLeaderboard[difficulty] = newLeaderboard[difficulty].slice(0, 20);
+    
+    setLeaderboard(newLeaderboard);
+    localStorage.setItem('chessLeaderboard', JSON.stringify(newLeaderboard));
+  }
+
+  // Save game
   function saveGame() {
     const gameData = {
       id: gameId,
@@ -596,7 +633,7 @@ const ChessApp = () => {
 
     return (
       <div style={{
-        fontSize: 90,
+        fontSize: isMobile ? 50 : 90,
         fontWeight: 'bold',
         color: isBlack ? '#000000' : '#FFFFFF',
         textShadow: isBlack 
@@ -622,7 +659,6 @@ const ChessApp = () => {
 
     if (piece && piece.color === 'white') {
       setSelectedSquare([row, col]);
-      // In hard mode, don't show legal moves
       if (difficulty !== 'hard') {
         setLegalMoves(getLegalMoves(board, row, col));
       }
@@ -681,6 +717,7 @@ const ChessApp = () => {
       if (isCheckmate(newBoard, 'black')) {
         setGameStatus('white_wins');
         setGameMessage('White wins! Black is checkmate!');
+        recordWinOnLeaderboard();
         return;
       }
       if (isStalemate(newBoard, 'black')) {
@@ -788,17 +825,17 @@ const ChessApp = () => {
     return (
       <div style={{
         backgroundColor: '#252541',
-        padding: '15px',
+        padding: isMobile ? '10px' : '15px',
         borderRadius: '8px',
         marginBottom: '15px'
       }}>
-        <h4 style={{ margin: '0 0 10px 0', color: color === 'white' ? '#2ecc71' : '#e74c3c', fontSize: '14px' }}>
-          {color === 'white' ? 'WHITE CAPTURES' : 'BLACK CAPTURES'}
+        <h4 style={{ margin: '0 0 10px 0', color: color === 'white' ? '#2ecc71' : '#e74c3c', fontSize: isMobile ? '12px' : '14px' }}>
+          {color === 'white' ? 'WHITE' : 'BLACK'}
         </h4>
         <div style={{
           display: 'flex',
           flexWrap: 'wrap',
-          gap: '5px',
+          gap: '3px',
           minHeight: '30px'
         }}>
           {pieces.length > 0 ? (
@@ -807,8 +844,8 @@ const ChessApp = () => {
                 <span
                   key={i}
                   style={{
-                    fontSize: '20px',
-                    padding: '4px 6px',
+                    fontSize: isMobile ? '14px' : '20px',
+                    padding: '2px 4px',
                     backgroundColor: '#1a1a2e',
                     borderRadius: '4px'
                   }}
@@ -817,17 +854,17 @@ const ChessApp = () => {
                 </span>
               ))}
               <span style={{
-                fontSize: '12px',
+                fontSize: isMobile ? '10px' : '12px',
                 color: '#999',
                 marginLeft: 'auto',
                 display: 'flex',
                 alignItems: 'center'
               }}>
-                Points: {totalValue}
+                {totalValue}
               </span>
             </>
           ) : (
-            <span style={{ fontSize: '12px', color: '#666' }}>No captures yet</span>
+            <span style={{ fontSize: '10px', color: '#666' }}>-</span>
           )}
         </div>
       </div>
@@ -836,15 +873,16 @@ const ChessApp = () => {
 
   // Render board
   const renderBoard = () => {
-    const squareSize = 90;
+    const squareSize = isMobile ? 50 : 90;
     return (
       <div style={{
         display: 'grid',
         gridTemplateColumns: `repeat(8, ${squareSize}px)`,
         gap: '0',
         backgroundColor: '#333',
-        marginTop: '20px',
-        border: '4px solid #333'
+        marginTop: '15px',
+        border: '2px solid #333',
+        margin: '0 auto'
       }}>
         {board.map((row, r) =>
           row.map((piece, c) => {
@@ -865,19 +903,20 @@ const ChessApp = () => {
                   justifyContent: 'center',
                   cursor: aiThinking || currentTurn !== 'white' ? 'not-allowed' : 'pointer',
                   position: 'relative',
-                  border: '1px solid rgba(0,0,0,0.1)'
+                  border: '1px solid rgba(0,0,0,0.1)',
+                  touchAction: 'manipulation'
                 }}
               >
                 {piece && renderPiece(piece)}
                 {isLegal && (
                   <div style={{
                     position: 'absolute',
-                    width: '20px',
-                    height: '20px',
+                    width: isMobile ? '10px' : '20px',
+                    height: isMobile ? '10px' : '20px',
                     backgroundColor: '#2ecc71',
                     borderRadius: '50%',
                     opacity: 0.8,
-                    border: '2px solid #1abc9c'
+                    border: '1px solid #1abc9c'
                   }} />
                 )}
               </div>
@@ -905,15 +944,15 @@ const ChessApp = () => {
       }}>
         <div style={{
           backgroundColor: '#1a1a2e',
-          padding: '40px',
+          padding: isMobile ? '20px' : '40px',
           borderRadius: '15px',
           textAlign: 'center',
-          color: '#eee'
+          color: '#eee',
+          maxWidth: '90%'
         }}>
-          <h2 style={{ marginBottom: '30px', color: '#f39c12' }}>♙ Pawn Promotion!</h2>
-          <p style={{ marginBottom: '30px', fontSize: '16px' }}>Choose a piece:</p>
+          <h2 style={{ marginBottom: '20px', color: '#f39c12', fontSize: isMobile ? '20px' : '24px' }}>♙ Promote!</h2>
           
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '15px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px' }}>
             {['queen', 'rook', 'bishop', 'knight'].map(type => (
               <button
                 key={type}
@@ -923,23 +962,23 @@ const ChessApp = () => {
                   continueMove(promotedBoard, 0, 0, 0, 0);
                 }}
                 style={{
-                  padding: '20px',
+                  padding: isMobile ? '12px' : '20px',
                   backgroundColor: '#f39c12',
                   color: 'white',
                   border: 'none',
                   borderRadius: '8px',
                   cursor: 'pointer',
-                  fontSize: '18px',
+                  fontSize: isMobile ? '14px' : '18px',
                   fontWeight: 'bold',
                   transition: 'all 0.3s'
                 }}
                 onMouseOver={(e) => e.target.style.backgroundColor = '#e67e22'}
                 onMouseOut={(e) => e.target.style.backgroundColor = '#f39c12'}
               >
-                {type === 'queen' && '♕ Queen'}
-                {type === 'rook' && '♖ Rook'}
-                {type === 'bishop' && '♗ Bishop'}
-                {type === 'knight' && '♘ Knight'}
+                {type === 'queen' && '♕'}
+                {type === 'rook' && '♖'}
+                {type === 'bishop' && '♗'}
+                {type === 'knight' && '♘'}
               </button>
             ))}
           </div>
@@ -952,14 +991,14 @@ const ChessApp = () => {
   if (!isLoggedIn) {
     return (
       <div style={{
-        padding: '40px 20px',
+        padding: isMobile ? '20px' : '40px 20px',
         maxWidth: '400px',
-        margin: '50px auto',
+        margin: '30px auto',
         backgroundColor: '#1a1a2e',
         color: '#eee',
         borderRadius: '15px'
       }}>
-        <h1 style={{ textAlign: 'center', marginBottom: '30px', fontSize: '32px' }}>♔ CHESS MASTER ♔</h1>
+        <h1 style={{ textAlign: 'center', marginBottom: '25px', fontSize: isMobile ? '24px' : '32px' }}>♔ CHESS MASTER</h1>
         <form onSubmit={isRegistering ? handleRegister : handleLogin}>
           <input
             type="text"
@@ -974,7 +1013,8 @@ const ChessApp = () => {
               border: 'none',
               boxSizing: 'border-box',
               backgroundColor: '#252541',
-              color: '#eee'
+              color: '#eee',
+              fontSize: '16px'
             }}
             required
           />
@@ -992,7 +1032,8 @@ const ChessApp = () => {
                 border: 'none',
                 boxSizing: 'border-box',
                 backgroundColor: '#252541',
-                color: '#eee'
+                color: '#eee',
+                fontSize: '16px'
               }}
               required
             />
@@ -1010,7 +1051,8 @@ const ChessApp = () => {
               border: 'none',
               boxSizing: 'border-box',
               backgroundColor: '#252541',
-              color: '#eee'
+              color: '#eee',
+              fontSize: '16px'
             }}
             required
           />
@@ -1041,10 +1083,11 @@ const ChessApp = () => {
             color: 'white',
             border: 'none',
             borderRadius: '8px',
-            cursor: 'pointer'
+            cursor: 'pointer',
+            fontSize: '14px'
           }}
         >
-          {isRegistering ? 'Already have account? Login' : "Don't have account? Register"}
+          {isRegistering ? 'Have account? Login' : "No account? Register"}
         </button>
       </div>
     );
@@ -1056,15 +1099,15 @@ const ChessApp = () => {
       <div style={{
         minHeight: '100vh',
         backgroundColor: '#0a0a0a',
-        padding: '60px 20px',
+        padding: isMobile ? '30px 15px' : '60px 20px',
         backgroundImage: 'linear-gradient(135deg, #1a1a2e 0%, #0a0a0a 100%)'
       }}>
-        <div style={{ maxWidth: '900px', margin: '0 auto' }}>
-          <h1 style={{ textAlign: 'center', fontSize: '48px', marginBottom: '15px', color: '#fff' }}>
-            ♔ Chess Master ♔
+        <div style={{ maxWidth: isMobile ? '100%' : '900px', margin: '0 auto' }}>
+          <h1 style={{ textAlign: 'center', fontSize: isMobile ? '32px' : '48px', marginBottom: '15px', color: '#fff' }}>
+            ♔ Chess Master
           </h1>
-          <p style={{ textAlign: 'center', fontSize: '18px', color: '#bbb', marginBottom: '60px' }}>
-            Learn, play, and master chess!
+          <p style={{ textAlign: 'center', fontSize: isMobile ? '14px' : '18px', color: '#bbb', marginBottom: isMobile ? '30px' : '60px' }}>
+            Learn, play, master chess!
           </p>
 
           {/* Play vs AI */}
@@ -1073,7 +1116,7 @@ const ChessApp = () => {
             style={{
               backgroundColor: '#1a1a2e',
               border: '1px solid #333',
-              padding: '20px',
+              padding: isMobile ? '15px' : '20px',
               borderRadius: '10px',
               marginBottom: '15px',
               cursor: 'pointer',
@@ -1083,19 +1126,19 @@ const ChessApp = () => {
             }}
           >
             <div>
-              <div style={{ fontSize: '24px', marginBottom: '8px' }}>⚔️ Play vs AI</div>
-              <div style={{ fontSize: '14px', color: '#999' }}>Challenge the AI - Easy, Medium, Hard</div>
+              <div style={{ fontSize: isMobile ? '18px' : '24px', marginBottom: '8px' }}>⚔️ Play vs AI</div>
+              <div style={{ fontSize: isMobile ? '12px' : '14px', color: '#999' }}>Easy, Medium, Hard</div>
             </div>
             <div style={{ fontSize: '24px', color: '#f39c12' }}>›</div>
           </div>
 
-          {/* Training Mode */}
+          {/* Training */}
           <div
             onClick={() => setScreenMode('training')}
             style={{
               backgroundColor: '#1a1a2e',
               border: '1px solid #333',
-              padding: '20px',
+              padding: isMobile ? '15px' : '20px',
               borderRadius: '10px',
               marginBottom: '15px',
               cursor: 'pointer',
@@ -1105,8 +1148,8 @@ const ChessApp = () => {
             }}
           >
             <div>
-              <div style={{ fontSize: '24px', marginBottom: '8px' }}>📚 Training Mode</div>
-              <div style={{ fontSize: '14px', color: '#999' }}>Learn piece movements, tactics, and strategy</div>
+              <div style={{ fontSize: isMobile ? '18px' : '24px', marginBottom: '8px' }}>📚 Training</div>
+              <div style={{ fontSize: isMobile ? '12px' : '14px', color: '#999' }}>Learn chess basics</div>
             </div>
             <div style={{ fontSize: '24px', color: '#f39c12' }}>›</div>
           </div>
@@ -1117,9 +1160,9 @@ const ChessApp = () => {
             style={{
               backgroundColor: '#1a1a2e',
               border: '1px solid #333',
-              padding: '20px',
+              padding: isMobile ? '15px' : '20px',
               borderRadius: '10px',
-              marginBottom: '30px',
+              marginBottom: '15px',
               cursor: 'pointer',
               display: 'flex',
               justifyContent: 'space-between',
@@ -1127,8 +1170,30 @@ const ChessApp = () => {
             }}
           >
             <div>
-              <div style={{ fontSize: '24px', marginBottom: '8px' }}>💾 Saved Games</div>
-              <div style={{ fontSize: '14px', color: '#999' }}>Resume games in progress</div>
+              <div style={{ fontSize: isMobile ? '18px' : '24px', marginBottom: '8px' }}>💾 Saved Games</div>
+              <div style={{ fontSize: isMobile ? '12px' : '14px', color: '#999' }}>Resume games</div>
+            </div>
+            <div style={{ fontSize: '24px', color: '#f39c12' }}>›</div>
+          </div>
+
+          {/* Leaderboard */}
+          <div
+            onClick={() => setScreenMode('leaderboard')}
+            style={{
+              backgroundColor: '#1a1a2e',
+              border: '1px solid #333',
+              padding: isMobile ? '15px' : '20px',
+              borderRadius: '10px',
+              marginBottom: isMobile ? '30px' : '30px',
+              cursor: 'pointer',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center'
+            }}
+          >
+            <div>
+              <div style={{ fontSize: isMobile ? '18px' : '24px', marginBottom: '8px' }}>🏆 Leaderboard</div>
+              <div style={{ fontSize: isMobile ? '12px' : '14px', color: '#999' }}>Top players</div>
             </div>
             <div style={{ fontSize: '24px', color: '#f39c12' }}>›</div>
           </div>
@@ -1143,7 +1208,7 @@ const ChessApp = () => {
               border: 'none',
               borderRadius: '8px',
               cursor: 'pointer',
-              fontSize: '16px',
+              fontSize: isMobile ? '14px' : '16px',
               fontWeight: 'bold'
             }}
           >
@@ -1154,12 +1219,115 @@ const ChessApp = () => {
     );
   }
 
+  // LEADERBOARD
+  if (screenMode === 'leaderboard') {
+    return (
+      <div style={{
+        padding: isMobile ? '20px' : '40px 20px',
+        maxWidth: isMobile ? '100%' : '1400px',
+        margin: '0 auto',
+        backgroundColor: '#0a0a0a',
+        minHeight: '100vh',
+        color: '#eee'
+      }}>
+        <button
+          onClick={() => setScreenMode('home')}
+          style={{
+            padding: '10px 20px',
+            backgroundColor: '#555',
+            color: 'white',
+            border: 'none',
+            borderRadius: '8px',
+            cursor: 'pointer',
+            marginBottom: '20px',
+            fontSize: isMobile ? '12px' : '16px'
+          }}
+        >
+          ← BACK
+        </button>
+
+        <h1 style={{ marginBottom: '30px', color: '#f39c12', textAlign: 'center', fontSize: isMobile ? '24px' : '32px' }}>🏆 LEADERBOARD</h1>
+
+        {isMobile ? (
+          // Mobile: Stacked layout
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            {['easy', 'medium', 'hard'].map(level => (
+              <div key={level} style={{
+                backgroundColor: '#1a1a2e',
+                padding: '15px',
+                borderRadius: '10px',
+                border: `2px solid ${level === 'easy' ? '#2ecc71' : level === 'medium' ? '#f39c12' : '#e74c3c'}`
+              }}>
+                <h3 style={{ textAlign: 'center', color: level === 'easy' ? '#2ecc71' : level === 'medium' ? '#f39c12' : '#e74c3c', marginTop: 0 }}>
+                  {level === 'easy' ? '⭐ EASY' : level === 'medium' ? '⭐⭐ MEDIUM' : '⭐⭐⭐ HARD'}
+                </h3>
+                {leaderboard[level].length > 0 ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {leaderboard[level].slice(0, 10).map((entry, i) => (
+                      <div key={i} style={{ padding: '8px', backgroundColor: '#252541', borderRadius: '6px', display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
+                        <span style={{ color: '#f39c12', fontWeight: 'bold' }}>#{i + 1}</span>
+                        <span>{entry.playerName}</span>
+                        <span style={{ color: level === 'easy' ? '#2ecc71' : level === 'medium' ? '#f39c12' : '#e74c3c' }}>{entry.moves}m</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p style={{ textAlign: 'center', color: '#666', margin: '10px 0' }}>No wins yet</p>
+                )}
+              </div>
+            ))}
+          </div>
+        ) : (
+          // Desktop: Three columns
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '30px' }}>
+            {['easy', 'medium', 'hard'].map(level => (
+              <div key={level} style={{
+                backgroundColor: '#1a1a2e',
+                padding: '25px',
+                borderRadius: '10px',
+                border: `2px solid ${level === 'easy' ? '#2ecc71' : level === 'medium' ? '#f39c12' : '#e74c3c'}`
+              }}>
+                <h2 style={{ textAlign: 'center', color: level === 'easy' ? '#2ecc71' : level === 'medium' ? '#f39c12' : '#e74c3c', marginTop: 0 }}>
+                  {level === 'easy' ? '⭐ EASY' : level === 'medium' ? '⭐⭐ MEDIUM' : '⭐⭐⭐ HARD'}
+                </h2>
+                <div style={{ maxHeight: '600px', overflowY: 'auto' }}>
+                  {leaderboard[level].length > 0 ? (
+                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                      <thead>
+                        <tr style={{ borderBottom: '2px solid #333' }}>
+                          <th style={{ padding: '10px', textAlign: 'left', color: '#999' }}>Rank</th>
+                          <th style={{ padding: '10px', textAlign: 'left', color: '#999' }}>Player</th>
+                          <th style={{ padding: '10px', textAlign: 'center', color: '#999' }}>Moves</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {leaderboard[level].map((entry, i) => (
+                          <tr key={i} style={{ borderBottom: '1px solid #333' }}>
+                            <td style={{ padding: '10px', color: '#f39c12', fontWeight: 'bold' }}>#{i + 1}</td>
+                            <td style={{ padding: '10px' }}>{entry.playerName}</td>
+                            <td style={{ padding: '10px', textAlign: 'center', color: level === 'easy' ? '#2ecc71' : level === 'medium' ? '#f39c12' : '#e74c3c' }}>{entry.moves}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  ) : (
+                    <p style={{ textAlign: 'center', color: '#666' }}>No wins recorded yet</p>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   // TRAINING MODE
   if (screenMode === 'training') {
     return (
       <div style={{
-        padding: '40px 20px',
-        maxWidth: '800px',
+        padding: isMobile ? '20px' : '40px 20px',
+        maxWidth: isMobile ? '100%' : '800px',
         margin: '0 auto',
         backgroundColor: '#0a0a0a',
         minHeight: '100vh',
@@ -1176,19 +1344,20 @@ const ChessApp = () => {
                 border: 'none',
                 borderRadius: '8px',
                 cursor: 'pointer',
-                marginBottom: '30px'
+                marginBottom: '20px',
+                fontSize: isMobile ? '12px' : '16px'
               }}
             >
               ← BACK
             </button>
 
-            <div style={{ backgroundColor: '#1a1a2e', padding: '30px', borderRadius: '10px' }}>
-              <h2 style={{ color: '#f39c12', marginTop: 0 }}>{trainingLessons[trainingTopic].title}</h2>
-              <p style={{ color: '#999', marginBottom: '30px' }}>{trainingLessons[trainingTopic].description}</p>
+            <div style={{ backgroundColor: '#1a1a2e', padding: isMobile ? '20px' : '30px', borderRadius: '10px' }}>
+              <h2 style={{ color: '#f39c12', marginTop: 0, fontSize: isMobile ? '20px' : '24px' }}>{trainingLessons[trainingTopic].title}</h2>
+              <p style={{ color: '#999', marginBottom: '20px', fontSize: isMobile ? '13px' : '16px' }}>{trainingLessons[trainingTopic].description}</p>
 
-              <div style={{ backgroundColor: '#252541', padding: '20px', borderRadius: '8px' }}>
+              <div style={{ backgroundColor: '#252541', padding: '15px', borderRadius: '8px' }}>
                 {trainingLessons[trainingTopic].tips.map((tip, i) => (
-                  <div key={i} style={{ marginBottom: '15px', fontSize: '16px', lineHeight: '1.6' }}>
+                  <div key={i} style={{ marginBottom: '12px', fontSize: isMobile ? '13px' : '16px', lineHeight: '1.6' }}>
                     {tip}
                   </div>
                 ))}
@@ -1204,8 +1373,8 @@ const ChessApp = () => {
                   border: 'none',
                   borderRadius: '8px',
                   cursor: 'pointer',
-                  marginTop: '30px',
-                  fontSize: '16px',
+                  marginTop: '20px',
+                  fontSize: isMobile ? '14px' : '16px',
                   fontWeight: 'bold'
                 }}
               >
@@ -1224,18 +1393,19 @@ const ChessApp = () => {
                 border: 'none',
                 borderRadius: '8px',
                 cursor: 'pointer',
-                marginBottom: '30px'
+                marginBottom: '20px',
+                fontSize: isMobile ? '12px' : '16px'
               }}
             >
               ← BACK
             </button>
 
-            <h1 style={{ textAlign: 'center', marginBottom: '40px', color: '#f39c12' }}>📚 Training Mode</h1>
+            <h1 style={{ textAlign: 'center', marginBottom: '25px', color: '#f39c12', fontSize: isMobile ? '24px' : '32px' }}>📚 Training</h1>
 
             <div style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
-              gap: '20px'
+              gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(300px, 1fr))',
+              gap: '15px'
             }}>
               {Object.entries(trainingLessons).map(([key, lesson]) => (
                 <div
@@ -1244,22 +1414,26 @@ const ChessApp = () => {
                   style={{
                     backgroundColor: '#1a1a2e',
                     border: '1px solid #333',
-                    padding: '20px',
+                    padding: isMobile ? '15px' : '20px',
                     borderRadius: '10px',
                     cursor: 'pointer',
                     transition: 'all 0.3s'
                   }}
                   onMouseOver={(e) => {
-                    e.currentTarget.style.borderColor = '#f39c12';
-                    e.currentTarget.style.transform = 'translateY(-5px)';
+                    if (!isMobile) {
+                      e.currentTarget.style.borderColor = '#f39c12';
+                      e.currentTarget.style.transform = 'translateY(-5px)';
+                    }
                   }}
                   onMouseOut={(e) => {
-                    e.currentTarget.style.borderColor = '#333';
-                    e.currentTarget.style.transform = 'translateY(0)';
+                    if (!isMobile) {
+                      e.currentTarget.style.borderColor = '#333';
+                      e.currentTarget.style.transform = 'translateY(0)';
+                    }
                   }}
                 >
-                  <h3 style={{ color: '#f39c12', marginTop: 0 }}>{lesson.title}</h3>
-                  <p style={{ color: '#999', margin: 0 }}>{lesson.description}</p>
+                  <h3 style={{ color: '#f39c12', marginTop: 0, fontSize: isMobile ? '16px' : '18px' }}>{lesson.title}</h3>
+                  <p style={{ color: '#999', margin: 0, fontSize: isMobile ? '12px' : '14px' }}>{lesson.description}</p>
                 </div>
               ))}
             </div>
@@ -1273,8 +1447,8 @@ const ChessApp = () => {
   if (screenMode === 'saved-games') {
     return (
       <div style={{
-        padding: '40px 20px',
-        maxWidth: '800px',
+        padding: isMobile ? '20px' : '40px 20px',
+        maxWidth: isMobile ? '100%' : '800px',
         margin: '0 auto',
         backgroundColor: '#0a0a0a',
         minHeight: '100vh',
@@ -1289,48 +1463,50 @@ const ChessApp = () => {
             border: 'none',
             borderRadius: '8px',
             cursor: 'pointer',
-            marginBottom: '30px'
+            marginBottom: '20px',
+            fontSize: isMobile ? '12px' : '16px'
           }}
         >
           ← BACK
         </button>
 
-        <h1 style={{ marginBottom: '30px', color: '#f39c12' }}>💾 Saved Games</h1>
+        <h1 style={{ marginBottom: '20px', color: '#f39c12', fontSize: isMobile ? '24px' : '32px' }}>💾 Saved Games</h1>
 
         {savedGames.length > 0 ? (
-          <div style={{ display: 'grid', gap: '15px' }}>
+          <div style={{ display: 'grid', gap: '12px' }}>
             {savedGames.map(game => (
               <div key={game.id} style={{
                 backgroundColor: '#1a1a2e',
-                padding: '20px',
+                padding: isMobile ? '12px' : '20px',
                 borderRadius: '10px',
                 border: '1px solid #333',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center'
+                display: isMobile ? 'block' : 'flex',
+                justifyContent: isMobile ? 'block' : 'space-between',
+                alignItems: isMobile ? 'block' : 'center'
               }}>
-                <div>
-                  <h3 style={{ margin: '0 0 10px 0', color: '#f39c12' }}>
-                    Difficulty: {game.difficulty.toUpperCase()}
+                <div style={{ marginBottom: isMobile ? '12px' : 0 }}>
+                  <h3 style={{ margin: '0 0 8px 0', color: '#f39c12', fontSize: isMobile ? '14px' : '16px' }}>
+                    {game.difficulty.toUpperCase()}
                   </h3>
-                  <p style={{ margin: '0 0 5px 0', color: '#999', fontSize: '14px' }}>
-                    Saved: {game.timestamp}
+                  <p style={{ margin: '0 0 4px 0', color: '#999', fontSize: '12px' }}>
+                    {game.timestamp}
                   </p>
-                  <p style={{ margin: 0, color: '#999', fontSize: '14px' }}>
-                    Moves: {game.moveHistory.length}
+                  <p style={{ margin: 0, color: '#999', fontSize: '12px' }}>
+                    {game.moveHistory.length} moves
                   </p>
                 </div>
-                <div style={{ display: 'flex', gap: '10px' }}>
+                <div style={{ display: 'flex', gap: '8px' }}>
                   <button
                     onClick={() => resumeGame(game)}
                     style={{
-                      padding: '10px 20px',
+                      padding: isMobile ? '8px 12px' : '10px 20px',
                       backgroundColor: '#2ecc71',
                       color: 'white',
                       border: 'none',
                       borderRadius: '8px',
                       cursor: 'pointer',
-                      fontWeight: 'bold'
+                      fontWeight: 'bold',
+                      fontSize: isMobile ? '12px' : '14px'
                     }}
                   >
                     Resume
@@ -1338,13 +1514,14 @@ const ChessApp = () => {
                   <button
                     onClick={() => deleteSavedGame(game.id)}
                     style={{
-                      padding: '10px 20px',
+                      padding: isMobile ? '8px 12px' : '10px 20px',
                       backgroundColor: '#e74c3c',
                       color: 'white',
                       border: 'none',
                       borderRadius: '8px',
                       cursor: 'pointer',
-                      fontWeight: 'bold'
+                      fontWeight: 'bold',
+                      fontSize: isMobile ? '12px' : '14px'
                     }}
                   >
                     Delete
@@ -1356,12 +1533,12 @@ const ChessApp = () => {
         ) : (
           <div style={{
             backgroundColor: '#1a1a2e',
-            padding: '40px',
+            padding: isMobile ? '25px' : '40px',
             borderRadius: '10px',
             textAlign: 'center'
           }}>
-            <p style={{ fontSize: '18px', color: '#999' }}>No saved games yet</p>
-            <p style={{ fontSize: '14px', color: '#666' }}>Start a new game and save it to see it here</p>
+            <p style={{ fontSize: isMobile ? '14px' : '18px', color: '#999' }}>No saved games</p>
+            <p style={{ fontSize: isMobile ? '12px' : '14px', color: '#666' }}>Save a game to resume later</p>
           </div>
         )}
       </div>
@@ -1372,14 +1549,14 @@ const ChessApp = () => {
   if (screenMode === 'menu') {
     return (
       <div style={{
-        padding: '40px 20px',
-        maxWidth: '600px',
-        margin: '50px auto',
+        padding: isMobile ? '20px' : '40px 20px',
+        maxWidth: isMobile ? '100%' : '600px',
+        margin: '30px auto',
         backgroundColor: '#1a1a2e',
         color: '#eee',
         borderRadius: '15px'
       }}>
-        <h2 style={{ textAlign: 'center', marginBottom: '30px' }}>Select Difficulty</h2>
+        <h2 style={{ textAlign: 'center', marginBottom: '20px', fontSize: isMobile ? '20px' : '24px' }}>Select Difficulty</h2>
 
         {['easy', 'medium', 'hard'].map(level => (
           <button
@@ -1400,20 +1577,20 @@ const ChessApp = () => {
             }}
             style={{
               width: '100%',
-              padding: '15px',
+              padding: '12px',
               backgroundColor: '#f39c12',
               color: 'white',
               border: 'none',
               borderRadius: '8px',
               cursor: 'pointer',
               marginBottom: '10px',
-              fontSize: '16px',
+              fontSize: isMobile ? '14px' : '16px',
               fontWeight: 'bold'
             }}
           >
-            {level === 'easy' && '⭐ EASY (Hints visible)'}
-            {level === 'medium' && '⭐⭐ MEDIUM (Hints visible)'}
-            {level === 'hard' && '⭐⭐⭐ HARD (No hints!)'}
+            {level === 'easy' && '⭐ EASY'}
+            {level === 'medium' && '⭐⭐ MEDIUM'}
+            {level === 'hard' && '⭐⭐⭐ HARD'}
           </button>
         ))}
 
@@ -1421,13 +1598,13 @@ const ChessApp = () => {
           onClick={() => setScreenMode('home')}
           style={{
             width: '100%',
-            padding: '15px',
+            padding: '12px',
             backgroundColor: '#555',
             color: 'white',
             border: 'none',
             borderRadius: '8px',
             cursor: 'pointer',
-            fontSize: '16px'
+            fontSize: isMobile ? '14px' : '16px'
           }}
         >
           BACK
@@ -1440,180 +1617,324 @@ const ChessApp = () => {
   if (screenMode === 'playing') {
     const isGameOver = gameStatus !== 'ongoing';
     
-    return (
-      <div style={{
-        padding: '20px',
-        backgroundColor: '#0a0a0a',
-        minHeight: '100vh',
-        display: 'flex',
-        justifyContent: 'center'
-      }}>
-        <div style={{ display: 'flex', gap: '20px', maxWidth: '1400px', width: '100%' }}>
-          {/* Left side - Black captures */}
-          <div style={{ width: '200px' }}>
-            <div style={{ color: '#eee', textAlign: 'center', marginBottom: '20px' }}>
-              <h3 style={{ color: '#e74c3c', margin: '0 0 10px 0' }}>🎯 AI (BLACK)</h3>
-            </div>
-            {renderCapturedPieces('black')}
+    if (isMobile) {
+      return (
+        <div style={{
+          padding: '10px',
+          backgroundColor: '#0a0a0a',
+          minHeight: '100vh',
+          display: 'flex',
+          flexDirection: 'column'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
+            <button
+              onClick={() => setScreenMode('home')}
+              style={{
+                padding: '8px 12px',
+                backgroundColor: '#555',
+                color: 'white',
+                border: 'none',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                fontSize: '12px'
+              }}
+            >
+              ← HOME
+            </button>
+            <span style={{ color: '#f39c12', fontWeight: 'bold', fontSize: '14px' }}>VS AI ({difficulty[0].toUpperCase()})</span>
           </div>
 
-          {/* Center - Board and Game Info */}
-          <div>
-            <div style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              marginBottom: '15px'
-            }}>
-              <button
-                onClick={() => setScreenMode('home')}
-                style={{
-                  padding: '10px 20px',
-                  backgroundColor: '#555',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '8px',
-                  cursor: 'pointer'
-                }}
-              >
-                ← HOME
-              </button>
-              <h2>VS AI ({difficulty.toUpperCase()})</h2>
-            </div>
-
-            <div style={{
-              textAlign: 'center',
-              marginBottom: '15px',
-              backgroundColor: '#1a1a2e',
-              padding: '15px',
-              borderRadius: '8px',
-              border: isGameOver ? '2px solid #f39c12' : 'none'
-            }}>
-              {isGameOver ? (
-                <div>
-                  <p style={{ fontSize: '20px', fontWeight: 'bold', color: '#f39c12', marginBottom: '5px' }}>
-                    {gameMessage}
-                  </p>
-                  <p style={{ marginTop: '10px' }}>Game Over!</p>
-                </div>
-              ) : (
-                <div>
-                  <p style={{ marginBottom: '5px' }}>
-                    Current Turn: <strong style={{ color: currentTurn === 'white' ? '#2ecc71' : '#e74c3c' }}>
-                      {currentTurn === 'white' ? '♔ WHITE' : '♚ BLACK'}
-                    </strong>
-                  </p>
-                  <p>Moves: {moveHistory.length}</p>
-                  {aiThinking && <p style={{ color: '#f39c12', fontWeight: 'bold' }}>⚡ AI thinks...</p>}
-                  {difficulty === 'hard' && <p style={{ color: '#f39c12', fontSize: '12px' }}>🔥 No hints in HARD mode!</p>}
-                </div>
-              )}
-            </div>
-
-            {renderBoard()}
-
-            <div style={{ marginTop: '15px', textAlign: 'center' }}>
-              <button
-                onClick={saveGame}
-                style={{
-                  padding: '10px 20px',
-                  backgroundColor: '#3498db',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '8px',
-                  cursor: 'pointer',
-                  marginRight: '10px'
-                }}
-              >
-                💾 SAVE GAME
-              </button>
-              <button
-                onClick={() => {
-                  setBoard(initializeBoard());
-                  setMoveHistory([]);
-                  setCapturedPieces({ white: [], black: [] });
-                  setCurrentTurn('white');
-                  setGameStatus('ongoing');
-                  setGameMessage('');
-                  setSelectedSquare(null);
-                  setLegalMoves([]);
-                  setGameId(Date.now());
-                }}
-                style={{
-                  padding: '10px 20px',
-                  backgroundColor: '#f39c12',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '8px',
-                  cursor: 'pointer',
-                  marginRight: '10px'
-                }}
-              >
-                ↻ NEW GAME
-              </button>
-              <button
-                onClick={() => setScreenMode('home')}
-                style={{
-                  padding: '10px 20px',
-                  backgroundColor: '#e74c3c',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '8px',
-                  cursor: 'pointer'
-                }}
-              >
-                EXIT
-              </button>
-            </div>
-
-            <div style={{
-              marginTop: '15px',
-              backgroundColor: '#1a1a2e',
-              padding: '20px',
-              borderRadius: '8px',
-              width: '480px'
-            }}>
-              <h3 style={{ marginTop: 0, marginBottom: '15px', color: '#f39c12' }}>Move History</h3>
-              <div style={{
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '8px',
-                maxHeight: '300px',
-                overflowY: 'auto'
-              }}>
-                {moveHistory.length > 0 ? (
-                  moveHistory.map((move, i) => (
-                    <div
-                      key={i}
-                      style={{
-                        padding: '8px 12px',
-                        backgroundColor: '#252541',
-                        borderRadius: '6px',
-                        fontSize: '13px',
-                        color: '#ddd',
-                        borderLeft: `3px solid ${i % 2 === 0 ? '#2ecc71' : '#e74c3c'}`
-                      }}
-                    >
-                      <span style={{ color: '#f39c12', fontWeight: 'bold' }}>{i + 1}.</span> {move}
-                    </div>
-                  ))
-                ) : (
-                  <p style={{ color: '#999', fontSize: '12px' }}>No moves yet</p>
-                )}
+          <div style={{
+            textAlign: 'center',
+            marginBottom: '10px',
+            backgroundColor: '#1a1a2e',
+            padding: '10px',
+            borderRadius: '8px',
+            border: isGameOver ? '2px solid #f39c12' : 'none'
+          }}>
+            {isGameOver ? (
+              <div>
+                <p style={{ fontSize: '14px', fontWeight: 'bold', color: '#f39c12', margin: '0 0 5px 0' }}>
+                  {gameMessage}
+                </p>
               </div>
-            </div>
+            ) : (
+              <div>
+                <p style={{ margin: '0 0 5px 0', fontSize: '12px' }}>
+                  Turn: <strong style={{ color: currentTurn === 'white' ? '#2ecc71' : '#e74c3c' }}>
+                    {currentTurn === 'white' ? 'YOU' : 'AI'}
+                  </strong>
+                </p>
+                <p style={{ margin: 0, fontSize: '12px' }}>Moves: {moveHistory.length}</p>
+                {aiThinking && <p style={{ color: '#f39c12', fontWeight: 'bold', fontSize: '11px', margin: '3px 0 0 0' }}>⚡</p>}
+              </div>
+            )}
           </div>
 
-          {/* Right side - White captures */}
-          <div style={{ width: '200px' }}>
-            <div style={{ color: '#eee', textAlign: 'center', marginBottom: '20px' }}>
-              <h3 style={{ color: '#2ecc71', margin: '0 0 10px 0' }}>👤 YOU (WHITE)</h3>
+          {renderBoard()}
+
+          <button
+            onClick={() => setShowCapturesOnMobile(!showCapturesOnMobile)}
+            style={{
+              width: '100%',
+              padding: '8px',
+              backgroundColor: '#3498db',
+              color: 'white',
+              border: 'none',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              marginTop: '10px',
+              fontSize: '12px'
+            }}
+          >
+            {showCapturesOnMobile ? '🔽 Hide' : '🔽 Captures'}
+          </button>
+
+          {showCapturesOnMobile && (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '10px' }}>
+              {renderCapturedPieces('white')}
+              {renderCapturedPieces('black')}
             </div>
-            {renderCapturedPieces('white')}
+          )}
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '10px' }}>
+            <button
+              onClick={saveGame}
+              style={{
+                padding: '8px',
+                backgroundColor: '#3498db',
+                color: 'white',
+                border: 'none',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                fontSize: '12px',
+                fontWeight: 'bold'
+              }}
+            >
+              💾 SAVE
+            </button>
+            <button
+              onClick={() => {
+                setBoard(initializeBoard());
+                setMoveHistory([]);
+                setCapturedPieces({ white: [], black: [] });
+                setCurrentTurn('white');
+                setGameStatus('ongoing');
+                setGameMessage('');
+                setSelectedSquare(null);
+                setLegalMoves([]);
+                setGameId(Date.now());
+              }}
+              style={{
+                padding: '8px',
+                backgroundColor: '#f39c12',
+                color: 'white',
+                border: 'none',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                fontSize: '12px',
+                fontWeight: 'bold'
+              }}
+            >
+              ↻ NEW
+            </button>
+          </div>
+
+          <div style={{
+            marginTop: '10px',
+            backgroundColor: '#1a1a2e',
+            padding: '10px',
+            borderRadius: '8px',
+            maxHeight: '150px',
+            overflowY: 'auto',
+            fontSize: '11px'
+          }}>
+            {moveHistory.length > 0 ? (
+              moveHistory.map((move, i) => (
+                <div key={i} style={{ color: '#ddd', borderLeft: `2px solid ${i % 2 === 0 ? '#2ecc71' : '#e74c3c'}`, paddingLeft: '5px', marginBottom: '3px' }}>
+                  {i + 1}. {move}
+                </div>
+              ))
+            ) : (
+              <p style={{ color: '#666', margin: 0 }}>No moves</p>
+            )}
           </div>
         </div>
-      </div>
-    );
+      );
+    } else {
+      // Desktop layout (unchanged)
+      return (
+        <div style={{
+          padding: '20px',
+          backgroundColor: '#0a0a0a',
+          minHeight: '100vh',
+          display: 'flex',
+          justifyContent: 'center'
+        }}>
+          <div style={{ display: 'flex', gap: '20px', maxWidth: '1400px', width: '100%' }}>
+            <div style={{ width: '200px' }}>
+              <div style={{ color: '#eee', textAlign: 'center', marginBottom: '20px' }}>
+                <h3 style={{ color: '#e74c3c', margin: '0 0 10px 0' }}>🎯 AI (BLACK)</h3>
+              </div>
+              {renderCapturedPieces('black')}
+            </div>
+
+            <div>
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: '15px'
+              }}>
+                <button
+                  onClick={() => setScreenMode('home')}
+                  style={{
+                    padding: '10px 20px',
+                    backgroundColor: '#555',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '8px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  ← HOME
+                </button>
+                <h2>VS AI ({difficulty.toUpperCase()})</h2>
+              </div>
+
+              <div style={{
+                textAlign: 'center',
+                marginBottom: '15px',
+                backgroundColor: '#1a1a2e',
+                padding: '15px',
+                borderRadius: '8px',
+                border: isGameOver ? '2px solid #f39c12' : 'none'
+              }}>
+                {isGameOver ? (
+                  <div>
+                    <p style={{ fontSize: '20px', fontWeight: 'bold', color: '#f39c12', marginBottom: '5px' }}>
+                      {gameMessage}
+                    </p>
+                    <p style={{ marginTop: '10px' }}>Game Over!</p>
+                  </div>
+                ) : (
+                  <div>
+                    <p style={{ marginBottom: '5px' }}>
+                      Current Turn: <strong style={{ color: currentTurn === 'white' ? '#2ecc71' : '#e74c3c' }}>
+                        {currentTurn === 'white' ? '♔ WHITE' : '♚ BLACK'}
+                      </strong>
+                    </p>
+                    <p>Moves: {moveHistory.length}</p>
+                    {aiThinking && <p style={{ color: '#f39c12', fontWeight: 'bold' }}>⚡ AI thinks...</p>}
+                    {difficulty === 'hard' && <p style={{ color: '#f39c12', fontSize: '12px' }}>🔥 No hints!</p>}
+                  </div>
+                )}
+              </div>
+
+              {renderBoard()}
+
+              <div style={{ marginTop: '15px', textAlign: 'center' }}>
+                <button
+                  onClick={saveGame}
+                  style={{
+                    padding: '10px 20px',
+                    backgroundColor: '#3498db',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    marginRight: '10px'
+                  }}
+                >
+                  💾 SAVE
+                </button>
+                <button
+                  onClick={() => {
+                    setBoard(initializeBoard());
+                    setMoveHistory([]);
+                    setCapturedPieces({ white: [], black: [] });
+                    setCurrentTurn('white');
+                    setGameStatus('ongoing');
+                    setGameMessage('');
+                    setSelectedSquare(null);
+                    setLegalMoves([]);
+                    setGameId(Date.now());
+                  }}
+                  style={{
+                    padding: '10px 20px',
+                    backgroundColor: '#f39c12',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    marginRight: '10px'
+                  }}
+                >
+                  ↻ NEW
+                </button>
+                <button
+                  onClick={() => setScreenMode('home')}
+                  style={{
+                    padding: '10px 20px',
+                    backgroundColor: '#e74c3c',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '8px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  EXIT
+                </button>
+              </div>
+
+              <div style={{
+                marginTop: '15px',
+                backgroundColor: '#1a1a2e',
+                padding: '20px',
+                borderRadius: '8px',
+                width: '480px'
+              }}>
+                <h3 style={{ marginTop: 0, marginBottom: '15px', color: '#f39c12' }}>Move History</h3>
+                <div style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '8px',
+                  maxHeight: '300px',
+                  overflowY: 'auto'
+                }}>
+                  {moveHistory.length > 0 ? (
+                    moveHistory.map((move, i) => (
+                      <div
+                        key={i}
+                        style={{
+                          padding: '8px 12px',
+                          backgroundColor: '#252541',
+                          borderRadius: '6px',
+                          fontSize: '13px',
+                          color: '#ddd',
+                          borderLeft: `3px solid ${i % 2 === 0 ? '#2ecc71' : '#e74c3c'}`
+                        }}
+                      >
+                        <span style={{ color: '#f39c12', fontWeight: 'bold' }}>{i + 1}.</span> {move}
+                      </div>
+                    ))
+                  ) : (
+                    <p style={{ color: '#999', fontSize: '12px' }}>No moves yet</p>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div style={{ width: '200px' }}>
+              <div style={{ color: '#eee', textAlign: 'center', marginBottom: '20px' }}>
+                <h3 style={{ color: '#2ecc71', margin: '0 0 10px 0' }}>👤 YOU (WHITE)</h3>
+              </div>
+              {renderCapturedPieces('white')}
+            </div>
+          </div>
+        </div>
+      );
+    }
   }
 };
 
