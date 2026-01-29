@@ -21,8 +21,76 @@ const ChessApp = () => {
   const [gameStatus, setGameStatus] = useState('ongoing');
   const [gameMessage, setGameMessage] = useState('');
   const [aiThinking, setAiThinking] = useState(false);
+  const [promotionDialog, setPromotionDialog] = useState(null);
 
   const apiClient = axios.create({ baseURL: API_BASE_URL });
+
+  // Piece square tables
+  const pawnTable = [
+    [0,  0,  0,  0,  0,  0,  0,  0],
+    [50, 50, 50, 50, 50, 50, 50, 50],
+    [10, 10, 20, 30, 30, 20, 10, 10],
+    [5,  5,  10, 25, 25, 10, 5,  5],
+    [0,  0,  5,  20, 20, 5,  0,  0],
+    [5,  -5, -10, 0,  0,  -10, -5, 5],
+    [5,  10, 10,  -20, -20, 10, 10, 5],
+    [0,  0,  0,  0,  0,  0,  0,  0]
+  ];
+
+  const knightTable = [
+    [-50, -40, -30, -30, -30, -30, -40, -50],
+    [-40, -20, 0,   0,   0,   0,   -20, -40],
+    [-30, 0,   10,  15,  15,  10,  0,   -30],
+    [-30, 5,   15,  20,  20,  15,  5,   -30],
+    [-30, 0,   15,  20,  20,  15,  0,   -30],
+    [-30, 5,   10,  15,  15,  10,  5,   -30],
+    [-40, -20, 0,   5,   5,   0,   -20, -40],
+    [-50, -40, -30, -30, -30, -30, -40, -50]
+  ];
+
+  const bishopTable = [
+    [-20, -10, -10, -10, -10, -10, -10, -20],
+    [-10, 0,   0,   0,   0,   0,   0,   -10],
+    [-10, 0,   5,   10,  10,  5,   0,   -10],
+    [-10, 5,   5,   10,  10,  5,   5,   -10],
+    [-10, 0,   10,  10,  10,  10,  0,   -10],
+    [-10, 10,  10,  10,  10,  10,  10,  -10],
+    [-10, 5,   0,   0,   0,   0,   5,   -10],
+    [-20, -10, -10, -10, -10, -10, -10, -20]
+  ];
+
+  const rookTable = [
+    [0,  0,  0,  0,  0,  0,  0,  0],
+    [5,  10, 10, 10, 10, 10, 10, 5],
+    [-5, 0,  0,  0,  0,  0,  0,  -5],
+    [-5, 0,  0,  0,  0,  0,  0,  -5],
+    [-5, 0,  0,  0,  0,  0,  0,  -5],
+    [-5, 0,  0,  0,  0,  0,  0,  -5],
+    [-5, 0,  0,  0,  0,  0,  0,  -5],
+    [0,  0,  0,  5,  5,  0,  0,  0]
+  ];
+
+  const queenTable = [
+    [-20, -10, -10, -5, -5, -10, -10, -20],
+    [-10, 0,   0,   0,  0,  0,   0,   -10],
+    [-10, 0,   5,   5,  5,  5,   0,   -10],
+    [-5,  0,   5,   5,  5,  5,   0,   -5],
+    [0,   0,   5,   5,  5,  5,   0,   -5],
+    [-10, 5,   5,   5,  5,  5,   0,   -10],
+    [-10, 0,   5,   0,  0,  0,   0,   -10],
+    [-20, -10, -10, -5, -5, -10, -10, -20]
+  ];
+
+  const kingTable = [
+    [-30, -40, -40, -50, -50, -40, -40, -30],
+    [-30, -40, -40, -50, -50, -40, -40, -30],
+    [-30, -40, -40, -50, -50, -40, -40, -30],
+    [-30, -40, -40, -50, -50, -40, -40, -30],
+    [-20, -30, -30, -40, -40, -30, -30, -20],
+    [-10, -20, -20, -20, -20, -20, -20, -10],
+    [20,  20,  0,   0,   0,   0,   20,  20],
+    [20,  30,  10,  0,   0,   10,  30,  20]
+  ];
 
   // Initialize board
   function initializeBoard() {
@@ -54,7 +122,7 @@ const ChessApp = () => {
     return board;
   }
 
-  // Find king position
+  // Find king
   function findKing(boardState, color) {
     for (let r = 0; r < 8; r++) {
       for (let c = 0; c < 8; c++) {
@@ -67,7 +135,7 @@ const ChessApp = () => {
     return null;
   }
 
-  // Check if square is attacked by opponent
+  // Check if square attacked
   function isSquareAttacked(boardState, row, col, byColor) {
     for (let r = 0; r < 8; r++) {
       for (let c = 0; c < 8; c++) {
@@ -83,7 +151,7 @@ const ChessApp = () => {
     return false;
   }
 
-  // Check if king is in check
+  // Check if king in check
   function isKingInCheck(boardState, color) {
     const kingPos = findKing(boardState, color);
     if (!kingPos) return false;
@@ -91,7 +159,7 @@ const ChessApp = () => {
     return isSquareAttacked(boardState, kingPos[0], kingPos[1], opponentColor);
   }
 
-  // Get pseudo-legal moves (without check validation)
+  // Pseudo legal moves
   function getAllPseudoLegalMoves(boardState, row, col) {
     const piece = boardState[row][col];
     if (!piece) return [];
@@ -176,7 +244,7 @@ const ChessApp = () => {
     return moves;
   }
 
-  // Get legal moves (filter out moves that leave king in check)
+  // Get legal moves
   function getLegalMoves(boardState, row, col) {
     const piece = boardState[row][col];
     if (!piece) return [];
@@ -185,12 +253,10 @@ const ChessApp = () => {
     const legalMoves = [];
 
     for (let move of pseudoMoves) {
-      // Simulate the move
       const testBoard = boardState.map(r => [...r]);
       testBoard[move[0]][move[1]] = testBoard[row][col];
       testBoard[row][col] = null;
 
-      // Check if king is in check after this move
       if (!isKingInCheck(testBoard, piece.color)) {
         legalMoves.push(move);
       }
@@ -201,53 +267,169 @@ const ChessApp = () => {
 
   // Check checkmate
   function isCheckmate(boardState, color) {
-    // Must be in check
     if (!isKingInCheck(boardState, color)) return false;
 
-    // Must have no legal moves
     for (let r = 0; r < 8; r++) {
       for (let c = 0; c < 8; c++) {
         const piece = boardState[r][c];
         if (piece && piece.color === color) {
           const moves = getLegalMoves(boardState, r, c);
-          if (moves.length > 0) {
-            return false; // Found a legal move
-          }
+          if (moves.length > 0) return false;
         }
       }
     }
-
-    return true; // No legal moves and in check = checkmate
+    return true;
   }
 
   // Check stalemate
   function isStalemate(boardState, color) {
-    // Must NOT be in check
     if (isKingInCheck(boardState, color)) return false;
 
-    // Must have no legal moves
     for (let r = 0; r < 8; r++) {
       for (let c = 0; c < 8; c++) {
         const piece = boardState[r][c];
         if (piece && piece.color === color) {
           const moves = getLegalMoves(boardState, r, c);
-          if (moves.length > 0) {
-            return false;
+          if (moves.length > 0) return false;
+        }
+      }
+    }
+    return true;
+  }
+
+  // Promote pawn
+  function promotePawn(boardState, row, col, newType) {
+    const newBoard = boardState.map(r => [...r]);
+    const pawn = newBoard[row][col];
+    if (pawn && pawn.type === 'pawn') {
+      newBoard[row][col] = { type: newType, color: pawn.color };
+    }
+    return newBoard;
+  }
+
+  // Position evaluation
+  function evaluatePosition(boardState, color) {
+    let score = 0;
+    const pieceValues = { pawn: 100, knight: 320, bishop: 330, rook: 500, queen: 900, king: 0 };
+    const tables = { pawn: pawnTable, knight: knightTable, bishop: bishopTable, rook: rookTable, queen: queenTable, king: kingTable };
+
+    for (let r = 0; r < 8; r++) {
+      for (let c = 0; c < 8; c++) {
+        const piece = boardState[r][c];
+        if (piece) {
+          let pieceScore = pieceValues[piece.type];
+          
+          const positionTable = tables[piece.type];
+          if (positionTable) {
+            const adjustedRow = piece.color === 'white' ? 7 - r : r;
+            pieceScore += positionTable[adjustedRow][c];
+          }
+
+          const mobilityMoves = getLegalMoves(boardState, r, c);
+          pieceScore += mobilityMoves.length * 2;
+
+          if (piece.color === color) {
+            score += pieceScore;
+          } else {
+            score -= pieceScore;
           }
         }
       }
     }
 
-    return true;
+    return score;
+  }
+
+  // Minimax
+  function minimax(boardState, depth, alpha, beta, isMaximizing, maxDepth) {
+    if (depth === maxDepth) {
+      return evaluatePosition(boardState, 'black');
+    }
+
+    if (isCheckmate(boardState, 'white')) return 10000 + depth;
+    if (isCheckmate(boardState, 'black')) return -10000 - depth;
+    if (isStalemate(boardState, isMaximizing ? 'black' : 'white')) return 0;
+
+    const color = isMaximizing ? 'black' : 'white';
+    let bestValue = isMaximizing ? -Infinity : Infinity;
+
+    for (let r = 0; r < 8; r++) {
+      for (let c = 0; c < 8; c++) {
+        const piece = boardState[r][c];
+        if (piece && piece.color === color) {
+          const moves = getLegalMoves(boardState, r, c);
+          
+          for (let move of moves) {
+            const newBoard = boardState.map(row => [...row]);
+            newBoard[move[0]][move[1]] = newBoard[r][c];
+            newBoard[r][c] = null;
+
+            // Check for pawn promotion
+            if (newBoard[move[0]][move[1]].type === 'pawn') {
+              if ((color === 'black' && move[0] === 7) || (color === 'white' && move[0] === 0)) {
+                newBoard[move[0]][move[1]] = { type: 'queen', color: color };
+              }
+            }
+
+            const value = minimax(newBoard, depth + 1, alpha, beta, !isMaximizing, maxDepth);
+
+            if (isMaximizing) {
+              bestValue = Math.max(bestValue, value);
+              alpha = Math.max(alpha, value);
+            } else {
+              bestValue = Math.min(bestValue, value);
+              beta = Math.min(beta, value);
+            }
+
+            if (beta <= alpha) break;
+          }
+        }
+      }
+    }
+
+    return bestValue;
+  }
+
+  // Find best AI move
+  function findBestAIMove(boardState) {
+    let bestMove = null;
+    let bestValue = -Infinity;
+    const depth = difficulty === 'easy' ? 2 : difficulty === 'medium' ? 3 : 4;
+
+    for (let r = 0; r < 8; r++) {
+      for (let c = 0; c < 8; c++) {
+        const piece = boardState[r][c];
+        if (piece && piece.color === 'black') {
+          const moves = getLegalMoves(boardState, r, c);
+          
+          for (let move of moves) {
+            const newBoard = boardState.map(row => [...row]);
+            newBoard[move[0]][move[1]] = newBoard[r][c];
+            newBoard[r][c] = null;
+
+            // Auto-promote to queen for AI
+            if (newBoard[move[0]][move[1]].type === 'pawn' && move[0] === 7) {
+              newBoard[move[0]][move[1]] = { type: 'queen', color: 'black' };
+            }
+
+            const value = minimax(newBoard, 0, -Infinity, Infinity, false, depth);
+
+            if (value > bestValue) {
+              bestValue = value;
+              bestMove = { from: [r, c], to: move };
+            }
+          }
+        }
+      }
+    }
+
+    return bestMove;
   }
 
   // Render piece
   function renderPiece(piece) {
     if (!piece) return null;
-
     const isBlack = piece.color === 'black';
-    const pieceSize = 90;
-
     const symbols = {
       pawn: isBlack ? '♟' : '♙',
       rook: isBlack ? '♜' : '♖',
@@ -258,22 +440,20 @@ const ChessApp = () => {
     };
 
     return (
-      <div
-        style={{
-          fontSize: pieceSize,
-          fontWeight: 'bold',
-          color: isBlack ? '#000000' : '#FFFFFF',
-          textShadow: isBlack 
-            ? '0 0 0 2px #000000, 0 0 3px rgba(0,0,0,0.8)' 
-            : '0 0 0 2px #CCCCCC, 0 0 3px rgba(100,100,100,0.5)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          width: '100%',
-          height: '100%',
-          filter: isBlack ? 'brightness(0.9)' : 'brightness(1.1)'
-        }}
-      >
+      <div style={{
+        fontSize: 90,
+        fontWeight: 'bold',
+        color: isBlack ? '#000000' : '#FFFFFF',
+        textShadow: isBlack 
+          ? '0 0 0 2px #000000, 0 0 3px rgba(0,0,0,0.8)' 
+          : '0 0 0 2px #CCCCCC, 0 0 3px rgba(100,100,100,0.5)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: '100%',
+        height: '100%',
+        filter: isBlack ? 'brightness(0.9)' : 'brightness(1.1)'
+      }}>
         {symbols[piece.type]}
       </div>
     );
@@ -281,7 +461,7 @@ const ChessApp = () => {
 
   // Handle square click
   const handleSquareClick = (row, col) => {
-    if (gameStatus !== 'ongoing' || currentTurn !== 'white' || aiThinking) return;
+    if (gameStatus !== 'ongoing' || currentTurn !== 'white' || aiThinking || promotionDialog) return;
 
     const piece = board[row][col];
 
@@ -311,6 +491,19 @@ const ChessApp = () => {
     newBoard[toRow][toCol] = piece;
     newBoard[fromRow][fromCol] = null;
 
+    // Check for pawn promotion (white pawn reaches row 0)
+    if (piece.type === 'pawn' && piece.color === 'white' && toRow === 0) {
+      setPromotionDialog({ boardState: newBoard, row: toRow, col: toCol });
+      setSelectedSquare(null);
+      setLegalMoves([]);
+      return;
+    }
+
+    continueMove(newBoard, fromRow, fromCol, toRow, toCol);
+  };
+
+  // Continue move after promotion
+  const continueMove = (newBoard, fromRow, fromCol, toRow, toCol) => {
     setBoard(newBoard);
     const moveNotation = `${String.fromCharCode(97 + fromCol)}${8 - fromRow} → ${String.fromCharCode(97 + toCol)}${8 - toRow}`;
     setMoveHistory([...moveHistory, moveNotation]);
@@ -318,7 +511,6 @@ const ChessApp = () => {
     setLegalMoves([]);
     setCurrentTurn('black');
 
-    // Check if black is in checkmate or stalemate
     setTimeout(() => {
       if (isCheckmate(newBoard, 'black')) {
         setGameStatus('white_wins');
@@ -349,11 +541,15 @@ const ChessApp = () => {
         newBoard[bestMove.to[0]][bestMove.to[1]] = piece;
         newBoard[bestMove.from[0]][bestMove.from[1]] = null;
 
+        // Auto-promote black pawn to queen
+        if (newBoard[bestMove.to[0]][bestMove.to[1]].type === 'pawn' && bestMove.to[0] === 7) {
+          newBoard[bestMove.to[0]][bestMove.to[1]] = { type: 'queen', color: 'black' };
+        }
+
         setBoard(newBoard);
         const moveNotation = `AI: ${String.fromCharCode(97 + bestMove.from[1])}${8 - bestMove.from[0]} → ${String.fromCharCode(97 + bestMove.to[1])}${8 - bestMove.to[0]}`;
         setMoveHistory(prev => [...prev, moveNotation]);
         
-        // Check if white is in checkmate or stalemate
         if (isCheckmate(newBoard, 'white')) {
           setGameStatus('black_wins');
           setGameMessage('Black wins! White is checkmate!');
@@ -371,78 +567,8 @@ const ChessApp = () => {
       }
 
       setAiThinking(false);
-    }, 800);
+    }, 1000);
   };
-
-  // Find best AI move
-  function findBestAIMove(boardState) {
-    let moveOptions = [];
-    const pieceValues = { pawn: 1, knight: 3, bishop: 3, rook: 5, queen: 9, king: 1000 };
-    
-    for (let r = 0; r < 8; r++) {
-      for (let c = 0; c < 8; c++) {
-        const piece = boardState[r][c];
-        if (piece && piece.color === 'black') {
-          const moves = getLegalMoves(boardState, r, c);
-          
-          for (let move of moves) {
-            let moveScore = 0;
-
-            // Check for checkmate
-            const testBoard = boardState.map(row => [...row]);
-            testBoard[move[0]][move[1]] = piece;
-            testBoard[r][c] = null;
-
-            if (isCheckmate(testBoard, 'white')) {
-              moveScore += 10000; // Highest priority
-            } else if (isStalemate(testBoard, 'white')) {
-              moveScore += 500; // Good, but not as good as checkmate
-            }
-
-            // Capture pieces
-            const target = boardState[move[0]][move[1]];
-            if (target) {
-              moveScore += pieceValues[target.type] * 10;
-            }
-
-            // Pawn promotion
-            if (piece.type === 'pawn' && move[0] === 7) {
-              moveScore += 80;
-            }
-
-            // Center control
-            const centerBonus = (3 <= move[1] && move[1] <= 4) && (3 <= move[0] && move[0] <= 4) ? 3 : 0;
-            moveScore += centerBonus;
-
-            // Pawn advancement
-            if (piece.type === 'pawn' && move[0] > r) {
-              moveScore += 2;
-            }
-
-            moveOptions.push({
-              from: [r, c],
-              to: move,
-              score: moveScore
-            });
-          }
-        }
-      }
-    }
-
-    if (moveOptions.length === 0) return null;
-
-    moveOptions.sort((a, b) => b.score - a.score);
-
-    if (difficulty === 'easy') {
-      const topMoves = moveOptions.slice(0, Math.min(8, moveOptions.length));
-      return topMoves[Math.floor(Math.random() * topMoves.length)];
-    } else if (difficulty === 'medium') {
-      const topMoves = moveOptions.slice(0, Math.min(3, moveOptions.length));
-      return topMoves[Math.floor(Math.random() * topMoves.length)];
-    } else {
-      return moveOptions[0];
-    }
-  }
 
   // Auth
   const handleLogin = async (e) => {
@@ -533,6 +659,66 @@ const ChessApp = () => {
       </div>
     );
   };
+
+  // Promotion Dialog
+  if (promotionDialog) {
+    return (
+      <div style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: 'rgba(0,0,0,0.7)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 1000
+      }}>
+        <div style={{
+          backgroundColor: '#1a1a2e',
+          padding: '40px',
+          borderRadius: '15px',
+          textAlign: 'center',
+          color: '#eee'
+        }}>
+          <h2 style={{ marginBottom: '30px', color: '#f39c12' }}>♙ Pawn Promotion!</h2>
+          <p style={{ marginBottom: '30px', fontSize: '16px' }}>Choose a piece to promote your pawn to:</p>
+          
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '15px' }}>
+            {['queen', 'rook', 'bishop', 'knight'].map(type => (
+              <button
+                key={type}
+                onClick={() => {
+                  const promotedBoard = promotePawn(promotionDialog.boardState, promotionDialog.row, promotionDialog.col, type);
+                  setPromotionDialog(null);
+                  continueMove(promotedBoard, 0, 0, 0, 0);
+                }}
+                style={{
+                  padding: '20px',
+                  backgroundColor: '#f39c12',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  fontSize: '18px',
+                  fontWeight: 'bold',
+                  transition: 'all 0.3s'
+                }}
+                onMouseOver={(e) => e.target.style.backgroundColor = '#e67e22'}
+                onMouseOut={(e) => e.target.style.backgroundColor = '#f39c12'}
+              >
+                {type === 'queen' && '♕ Queen'}
+                {type === 'rook' && '♖ Rook'}
+                {type === 'bishop' && '♗ Bishop'}
+                {type === 'knight' && '♘ Knight'}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // LOGIN
   if (!isLoggedIn) {
