@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
 
-// Use environment variable if available, otherwise fallback to localhost
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+// Hardcoded backend URL for testing
+const API_BASE_URL = 'https://chess-backend-production-25ad.up.railway.app/api';
 
 const ChessApp = () => {
   // Authentication
