@@ -13,22 +13,42 @@ from datetime import datetime
 from dotenv import load_dotenv
 import json
 import re
+import logging
+import sys
 
+# Setup logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    stream=sys.stdout
+)
+logger = logging.getLogger(__name__)
+
+# Load environment variables
 load_dotenv()
 
+# Create Flask app
 app = Flask(__name__)
 CORS(app)
 
 # Configuration
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///chess.db'
+app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'sqlite:///chess.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'your-secret-key-change-in-production')
+app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+    'connect_args': {'check_same_thread': False} if 'sqlite' in app.config['SQLALCHEMY_DATABASE_URI'] else {},
+    'pool_pre_ping': True,
+    'pool_recycle': 3600,
+}
+app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
 
 # Initialize database
 db = SQLAlchemy(app)
 
 # Set OpenAI API key
-openai.api_key = os.getenv('OPENAI_API_KEY')
+openai.api_key = os.getenv('OPENAI_API_KEY', '')
+
+logger.info(f"Database URI: {app.config['SQLALCHEMY_DATABASE_URI']}")
+logger.info(f"OpenAI API Key set: {bool(openai.api_key)}")
 
 # ========================
 # DATABASE MODELS
@@ -64,11 +84,11 @@ class Game(db.Model):
     __tablename__ = 'game'
     id = db.Column(db.Integer, primary_key=True)
     player_id = db.Column(db.Integer, db.ForeignKey('player.id'), nullable=False)
-    difficulty = db.Column(db.String(20), nullable=False)  # easy, medium, hard
-    moves = db.Column(db.Text)  # JSON array of moves
-    board_state = db.Column(db.Text)  # Final board state
-    result = db.Column(db.String(20))  # win, loss, draw
-    completion_time = db.Column(db.Integer)  # seconds
+    difficulty = db.Column(db.String(20), nullable=False)
+    moves = db.Column(db.Text)
+    board_state = db.Column(db.Text)
+    result = db.Column(db.String(20))
+    completion_time = db.Column(db.Integer)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     def to_dict(self):
@@ -88,7 +108,7 @@ class Ranking(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     player_id = db.Column(db.Integer, db.ForeignKey('player.id'), nullable=False)
     difficulty = db.Column(db.String(20), nullable=False)
-    completion_time = db.Column(db.Integer, nullable=False)  # seconds
+    completion_time = db.Column(db.Integer, nullable=False)
     rank_position = db.Column(db.Integer)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -105,457 +125,301 @@ class Ranking(db.Model):
 
 
 # ========================
-# API ROUTES
+# HEALTH CHECK & STATUS
 # ========================
 
-# Health check
 @app.route('/api/health', methods=['GET'])
 def health_check():
-    """Check if server is running"""
-    return jsonify({'status': 'healthy', 'timestamp': datetime.utcnow().isoformat()})
+    """Health check endpoint"""
+    try:
+        # Check database
+        db.session.execute('SELECT 1')
+        db.session.commit()
+        
+        return jsonify({
+            'status': 'healthy',
+            'message': 'Backend is running',
+            'database': 'connected'
+        }), 200
+    except Exception as e:
+        logger.error(f"Health check failed: {str(e)}")
+        return jsonify({
+            'status': 'unhealthy',
+            'error': str(e),
+            'database': 'disconnected'
+        }), 503
 
 
-# ========================
-# PLAYER ROUTES
-# ========================
-
-@app.route('/api/players/register', methods=['POST'])
-def register():
-    """Register a new player"""
-    data = request.get_json()
-    
-    if not data.get('username') or not data.get('email') or not data.get('password'):
-        return jsonify({'error': 'Missing required fields'}), 400
-    
-    if Player.query.filter_by(username=data['username']).first():
-        return jsonify({'error': 'Username already exists'}), 409
-    
-    player = Player(
-        username=data['username'],
-        email=data['email']
-    )
-    player.set_password(data['password'])
-    
-    db.session.add(player)
-    db.session.commit()
-    
+@app.route('/api/status', methods=['GET'])
+def status():
+    """Status endpoint"""
     return jsonify({
-        'message': 'Player registered successfully',
-        'player': player.to_dict()
-    }), 201
-
-
-@app.route('/api/players/<int:player_id>', methods=['GET'])
-def get_player(player_id):
-    """Get player profile"""
-    player = Player.query.get_or_404(player_id)
-    return jsonify(player.to_dict())
-
-
-@app.route('/api/players/<int:player_id>', methods=['PUT'])
-def update_player(player_id):
-    """Update player profile"""
-    player = Player.query.get_or_404(player_id)
-    data = request.get_json()
-    
-    if 'email' in data:
-        player.email = data['email']
-    
-    db.session.commit()
-    return jsonify(player.to_dict())
+        'status': 'ok',
+        'service': 'Chess API',
+        'version': '1.0.0'
+    }), 200
 
 
 # ========================
-# CHESS AI ROUTES
+# AUTH ENDPOINTS
 # ========================
 
-def is_valid_move(board, from_pos, to_pos, piece):
-    """Validate if a move is legal in chess"""
-    from_row, from_col = from_pos
-    to_row, to_col = to_pos
-    
-    # Basic boundary check
-    if not (0 <= to_row < 8 and 0 <= to_col < 8):
-        return False
-    
-    target = board[to_row][to_col]
-    
-    # Can't capture own pieces
-    if target and target.get('color') == piece.get('color'):
-        return False
-    
-    # Piece-specific move validation
-    piece_type = piece.get('type')
-    
-    if piece_type == 'pawn':
-        direction = -1 if piece['color'] == 'white' else 1
-        # Forward move
-        if from_col == to_col and not target:
-            if to_row == from_row + direction:
-                return True
-            # Two-square initial move
-            if (from_row == 6 and piece['color'] == 'white') or (from_row == 1 and piece['color'] == 'black'):
-                if to_row == from_row + 2 * direction and not board[from_row + direction][from_col]:
-                    return True
-        # Capture
-        if abs(from_col - to_col) == 1 and to_row == from_row + direction and target:
-            return True
-        return False
-    
-    elif piece_type == 'knight':
-        row_diff = abs(to_row - from_row)
-        col_diff = abs(to_col - from_col)
-        return (row_diff == 2 and col_diff == 1) or (row_diff == 1 and col_diff == 2)
-    
-    elif piece_type == 'king':
-        return abs(to_row - from_row) <= 1 and abs(to_col - from_col) <= 1
-    
-    elif piece_type in ['rook', 'bishop', 'queen']:
-        # Check path is clear
-        row_dir = 0 if from_row == to_row else (1 if to_row > from_row else -1)
-        col_dir = 0 if from_col == to_col else (1 if to_col > from_col else -1)
-        
-        # Rook/Queen can't move diagonally (unless queen or bishop)
-        if piece_type == 'rook' and row_dir != 0 and col_dir != 0:
-            return False
-        
-        # Bishop/Queen can't move straight (unless queen or rook)
-        if piece_type == 'bishop' and (row_dir == 0 or col_dir == 0):
-            return False
-        
-        # Check path is clear
-        r, c = from_row + row_dir, from_col + col_dir
-        while (r, c) != (to_row, to_col):
-            if board[r][c]:
-                return False
-            r += row_dir
-            c += col_dir
-        
-        return True
-    
-    return False
-
-
-@app.route('/api/chess/validate-move', methods=['POST'])
-def validate_move():
-    """Validate a chess move"""
-    data = request.get_json()
-    board = data.get('board')
-    from_pos = data.get('from_pos')
-    to_pos = data.get('to_pos')
-    
-    piece = board[from_pos[0]][from_pos[1]]
-    if not piece:
-        return jsonify({'valid': False, 'error': 'No piece at source'}), 400
-    
-    valid = is_valid_move(board, from_pos, to_pos, piece)
-    return jsonify({'valid': valid})
-
-
-@app.route('/api/chess/get-legal-moves', methods=['POST'])
-def get_legal_moves():
-    """Get all legal moves for a piece"""
-    data = request.get_json()
-    board = data.get('board')
-    row = data.get('row')
-    col = data.get('col')
-    
-    piece = board[row][col]
-    if not piece:
-        return jsonify({'legal_moves': []}), 400
-    
-    legal_moves = []
-    for to_row in range(8):
-        for to_col in range(8):
-            if is_valid_move(board, (row, col), (to_row, to_col), piece):
-                legal_moves.append({'row': to_row, 'col': to_col})
-    
-    return jsonify({'legal_moves': legal_moves})
-
-
-@app.route('/api/chess/ai-move', methods=['POST'])
-def ai_move():
-    """Get AI move using OpenAI"""
-    data = request.get_json()
-    board = data.get('board')
-    difficulty = data.get('difficulty', 'medium')
-    
+@app.route('/api/auth/register', methods=['POST'])
+def register():
+    """Register new player"""
     try:
-        # Format board state for AI
-        board_str = json.dumps(board)
+        data = request.get_json()
         
-        system_prompt = f"""You are an expert chess AI playing as Black. 
-        Analyze the chess board position and suggest ONE best move.
-        Difficulty level: {difficulty}
+        if not data or not data.get('username') or not data.get('email') or not data.get('password'):
+            return jsonify({'error': 'Missing required fields'}), 400
         
-        Respond with ONLY a JSON object:
-        {{"from_row": 0, "from_col": 0, "to_row": 0, "to_col": 0}}
+        # Check if user exists
+        if Player.query.filter_by(username=data['username']).first():
+            return jsonify({'error': 'Username already exists'}), 409
         
-        Use 0-based indexing. Row 0 is rank 8, row 7 is rank 1.
-        Column 0 is file 'a', column 7 is file 'h'.
-        """
+        if Player.query.filter_by(email=data['email']).first():
+            return jsonify({'error': 'Email already exists'}), 409
         
-        user_prompt = f"""Current board state:
-        {board_str}
+        # Create new player
+        player = Player(username=data['username'], email=data['email'])
+        player.set_password(data['password'])
         
-        Find the best move for Black piece (move from a Black piece to an empty square or capture a White piece).
-        Analyze the position and suggest one strong move."""
+        db.session.add(player)
+        db.session.commit()
         
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ],
-            temperature=0.7 if difficulty == 'easy' else (0.5 if difficulty == 'medium' else 0.3),
-            max_tokens=100
-        )
-        
-        response_text = response.choices[0].message.content.strip()
-        
-        # Try to parse JSON from response
-        json_match = re.search(r'\{[^}]+\}', response_text)
-        if json_match:
-            move = json.loads(json_match.group())
-            return jsonify({
-                'move': move,
-                'from_row': move.get('from_row'),
-                'from_col': move.get('from_col'),
-                'to_row': move.get('to_row'),
-                'to_col': move.get('to_col')
-            })
-        else:
-            # Fallback: return default move
-            return jsonify({'error': 'Could not parse move', 'move': None}), 400
+        return jsonify({
+            'message': 'Player registered successfully',
+            'player': player.to_dict()
+        }), 201
     
     except Exception as e:
-        print(f"Error in AI move: {str(e)}")
+        logger.error(f"Registration error: {str(e)}")
+        db.session.rollback()
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/api/chess/detect-checkmate', methods=['POST'])
-def detect_checkmate():
-    """Detect if position is checkmate"""
-    data = request.get_json()
-    board = data.get('board')
-    player_color = data.get('player_color')
-    
+@app.route('/api/auth/login', methods=['POST'])
+def login():
+    """Login player"""
     try:
-        board_str = json.dumps(board)
+        data = request.get_json()
         
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {
-                    "role": "system",
-                    "content": "You are a chess expert. Analyze if the given position is checkmate for the specified player."
-                },
-                {
-                    "role": "user",
-                    "content": f"""Board state: {board_str}
-                    
-                    Is {player_color} in checkmate? Answer with only 'yes' or 'no'."""
-                }
-            ],
-            max_tokens=10,
-            temperature=0
-        )
+        if not data or not data.get('username') or not data.get('password'):
+            return jsonify({'error': 'Missing credentials'}), 400
         
-        answer = response.choices[0].message.content.strip().lower()
-        is_checkmate = 'yes' in answer
+        player = Player.query.filter_by(username=data['username']).first()
         
-        return jsonify({'is_checkmate': is_checkmate})
+        if not player or not player.check_password(data['password']):
+            return jsonify({'error': 'Invalid credentials'}), 401
+        
+        return jsonify({
+            'message': 'Login successful',
+            'player': player.to_dict()
+        }), 200
     
     except Exception as e:
+        logger.error(f"Login error: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 
 # ========================
-# GAME ROUTES
+# GAME ENDPOINTS
 # ========================
 
 @app.route('/api/games', methods=['POST'])
 def create_game():
-    """Create a new game record"""
-    data = request.get_json()
+    """Create new game"""
+    try:
+        data = request.get_json()
+        
+        if not data or not data.get('player_id') or not data.get('difficulty'):
+            return jsonify({'error': 'Missing required fields'}), 400
+        
+        game = Game(
+            player_id=data['player_id'],
+            difficulty=data['difficulty'],
+            moves='[]',
+            board_state='',
+            result=None
+        )
+        
+        db.session.add(game)
+        db.session.commit()
+        
+        return jsonify({
+            'message': 'Game created',
+            'game': game.to_dict()
+        }), 201
     
-    game = Game(
-        player_id=data.get('player_id'),
-        difficulty=data.get('difficulty'),
-        moves='[]'
-    )
-    
-    db.session.add(game)
-    db.session.commit()
-    
-    return jsonify(game.to_dict()), 201
+    except Exception as e:
+        logger.error(f"Create game error: {str(e)}")
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/games/<int:game_id>', methods=['GET'])
 def get_game(game_id):
     """Get game details"""
-    game = Game.query.get_or_404(game_id)
-    return jsonify(game.to_dict())
+    try:
+        game = Game.query.get(game_id)
+        
+        if not game:
+            return jsonify({'error': 'Game not found'}), 404
+        
+        return jsonify(game.to_dict()), 200
+    
+    except Exception as e:
+        logger.error(f"Get game error: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/games/<int:game_id>', methods=['PUT'])
 def update_game(game_id):
-    """Update game record"""
-    game = Game.query.get_or_404(game_id)
-    data = request.get_json()
+    """Update game"""
+    try:
+        data = request.get_json()
+        game = Game.query.get(game_id)
+        
+        if not game:
+            return jsonify({'error': 'Game not found'}), 404
+        
+        if 'moves' in data:
+            game.moves = json.dumps(data['moves'])
+        if 'board_state' in data:
+            game.board_state = data['board_state']
+        if 'result' in data:
+            game.result = data['result']
+        if 'completion_time' in data:
+            game.completion_time = data['completion_time']
+        
+        db.session.commit()
+        
+        return jsonify({
+            'message': 'Game updated',
+            'game': game.to_dict()
+        }), 200
     
-    if 'moves' in data:
-        game.moves = json.dumps(data['moves'])
-    if 'board_state' in data:
-        game.board_state = json.dumps(data['board_state'])
-    if 'result' in data:
-        game.result = data['result']
-    if 'completion_time' in data:
-        game.completion_time = data['completion_time']
-    
-    db.session.commit()
-    return jsonify(game.to_dict())
-
-
-@app.route('/api/games/player/<int:player_id>', methods=['GET'])
-def get_player_games(player_id):
-    """Get all games for a player"""
-    games = Game.query.filter_by(player_id=player_id).all()
-    return jsonify([game.to_dict() for game in games])
+    except Exception as e:
+        logger.error(f"Update game error: {str(e)}")
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
 
 
 # ========================
-# RANKING ROUTES
+# RANKINGS ENDPOINTS
 # ========================
 
-@app.route('/api/rankings', methods=['POST'])
-def submit_ranking():
-    """Submit a ranking"""
-    data = request.get_json()
+@app.route('/api/rankings', methods=['GET'])
+def get_rankings():
+    """Get rankings"""
+    try:
+        difficulty = request.args.get('difficulty', 'all')
+        
+        if difficulty == 'all':
+            rankings = Ranking.query.order_by(Ranking.rank_position).all()
+        else:
+            rankings = Ranking.query.filter_by(difficulty=difficulty).order_by(Ranking.rank_position).all()
+        
+        return jsonify([r.to_dict() for r in rankings]), 200
     
-    ranking = Ranking(
-        player_id=data.get('player_id'),
-        difficulty=data.get('difficulty'),
-        completion_time=data.get('completion_time')
-    )
-    
-    db.session.add(ranking)
-    db.session.commit()
-    
-    # Update rank position
-    same_difficulty_rankings = Ranking.query.filter_by(
-        difficulty=data.get('difficulty')
-    ).order_by(Ranking.completion_time).all()
-    
-    for idx, rank in enumerate(same_difficulty_rankings, 1):
-        rank.rank_position = idx
-    
-    db.session.commit()
-    
-    return jsonify(ranking.to_dict()), 201
-
-
-@app.route('/api/rankings/difficulty/<difficulty>', methods=['GET'])
-def get_rankings_by_difficulty(difficulty):
-    """Get rankings for specific difficulty"""
-    limit = request.args.get('limit', 10, type=int)
-    rankings = Ranking.query.filter_by(
-        difficulty=difficulty
-    ).order_by(Ranking.completion_time).limit(limit).all()
-    
-    return jsonify([rank.to_dict() for rank in rankings])
+    except Exception as e:
+        logger.error(f"Get rankings error: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/rankings/top', methods=['GET'])
 def get_top_rankings():
-    """Get top rankings across all difficulties"""
-    limit = request.args.get('limit', 10, type=int)
+    """Get top 10 rankings"""
+    try:
+        limit = request.args.get('limit', 10, type=int)
+        rankings = Ranking.query.order_by(Ranking.rank_position).limit(limit).all()
+        
+        return jsonify([r.to_dict() for r in rankings]), 200
     
-    result = {}
-    for difficulty in ['easy', 'medium', 'hard']:
-        rankings = Ranking.query.filter_by(
-            difficulty=difficulty
-        ).order_by(Ranking.completion_time).limit(limit).all()
-        result[difficulty] = [rank.to_dict() for rank in rankings]
-    
-    return jsonify(result)
-
-
-@app.route('/api/rankings/player/<int:player_id>', methods=['GET'])
-def get_player_rankings(player_id):
-    """Get rankings for a specific player"""
-    rankings = Ranking.query.filter_by(player_id=player_id).all()
-    return jsonify([rank.to_dict() for rank in rankings])
+    except Exception as e:
+        logger.error(f"Get top rankings error: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
 
 # ========================
-# TRAINING ROUTES
+# TRAINING ENDPOINTS
 # ========================
 
 @app.route('/api/training/lessons', methods=['GET'])
 def get_lessons():
-    """Get training lessons"""
-    lessons = [
-        {
-            'id': 1,
-            'name': 'Piece Movements',
-            'description': 'Learn how each piece moves',
-            'content': 'Pawns move forward 1 square (or 2 from start). Rooks move horizontally or vertically. Bishops move diagonally. Knights move in L-shapes (2+1). Queens combine rook and bishop. Kings move 1 square in any direction.'
-        },
-        {
-            'id': 2,
-            'name': 'Basic Checkmate Patterns',
-            'description': 'Master fundamental checkmate patterns',
-            'content': 'Back Rank Mate: Trap king on back rank. Two Rook Mate: Coordinate rooks. Fool\'s Mate: 2-move mate. Scholar\'s Mate: 4-move mate. Smothered Mate: Knight mate with blocked king.'
-        },
-        {
-            'id': 3,
-            'name': 'Opening Principles',
-            'description': 'Understand good opening strategies',
-            'content': 'Control center (d4, e4, d5, e5). Develop pieces (knights, bishops first). Castle early for safety. Avoid moving same piece twice. Keep queen protected.'
-        },
-        {
-            'id': 4,
-            'name': 'Tactical Puzzles',
-            'description': 'Solve tactical puzzles',
-            'content': 'Pins: Restrict movement. Forks: Attack two pieces. Skewers: Force valuable piece away. Discovered Attack: Move to reveal attack. X-Ray: Attack through pieces.'
-        }
-    ]
-    return jsonify(lessons)
-
-
-@app.route('/api/training/generate-puzzle', methods=['POST'])
-def generate_puzzle():
-    """Generate tactical puzzle using OpenAI"""
-    data = request.get_json()
-    difficulty = data.get('difficulty', 'medium')
-    
+    """Get chess lessons"""
     try:
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {
-                    "role": "system",
-                    "content": f"Generate a chess puzzle at {difficulty} level. Provide a description of the position and the solution."
-                },
-                {
-                    "role": "user",
-                    "content": "Create a tactical chess puzzle for training."
-                }
-            ],
-            max_tokens=500,
-            temperature=0.8
-        )
-        
-        puzzle = response.choices[0].message.content.strip()
-        
-        return jsonify({
-            'puzzle': puzzle,
-            'difficulty': difficulty
-        })
+        lessons = [
+            {
+                'id': 1,
+                'title': 'Chess Basics',
+                'description': 'Learn the fundamental rules and pieces',
+                'level': 'beginner'
+            },
+            {
+                'id': 2,
+                'title': 'Opening Theory',
+                'description': 'Master popular chess openings',
+                'level': 'intermediate'
+            },
+            {
+                'id': 3,
+                'title': 'Endgame Strategy',
+                'description': 'Win in the endgame',
+                'level': 'advanced'
+            }
+        ]
+        return jsonify(lessons), 200
     
     except Exception as e:
+        logger.error(f"Get lessons error: {str(e)}")
         return jsonify({'error': str(e)}), 500
+
+
+# ========================
+# AI MOVE ENDPOINT
+# ========================
+
+@app.route('/api/chess/ai-move', methods=['POST'])
+def get_ai_move():
+    """Get AI move for chess game"""
+    try:
+        if not openai.api_key:
+            return jsonify({
+                'error': 'OpenAI API key not configured',
+                'move': 'e2e4'
+            }), 200
+        
+        data = request.get_json()
+        board_state = data.get('board_state', '')
+        difficulty = data.get('difficulty', 'medium')
+        
+        prompt = f"""You are a chess engine at {difficulty} difficulty level.
+        Current board state: {board_state}
+        
+        Provide the best next move in algebraic notation (e.g., e2e4).
+        Only respond with the move, nothing else."""
+        
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=10,
+            temperature=0.7 if difficulty == 'easy' else 0.5
+        )
+        
+        move = response.choices[0].message.content.strip()
+        
+        return jsonify({
+            'move': move,
+            'difficulty': difficulty
+        }), 200
+    
+    except Exception as e:
+        logger.error(f"AI move error: {str(e)}")
+        return jsonify({
+            'error': str(e),
+            'move': 'e2e4'
+        }), 200
 
 
 # ========================
@@ -569,6 +433,7 @@ def not_found(error):
 
 @app.errorhandler(500)
 def internal_error(error):
+    logger.error(f"Internal error: {str(error)}")
     return jsonify({'error': 'Internal server error'}), 500
 
 
@@ -576,27 +441,31 @@ def internal_error(error):
 # DATABASE INITIALIZATION
 # ========================
 
+def init_db():
+    """Initialize database"""
+    try:
+        with app.app_context():
+            db.create_all()
+            logger.info("Database initialized successfully")
+    except Exception as e:
+        logger.error(f"Database initialization error: {str(e)}")
+
+
+# Create tables on startup
 @app.before_request
 def create_tables():
-    """Create database tables if they don't exist"""
-    db.create_all()
-
-
-# ========================
-# HEALTH CHECK ENDPOINT
-# ========================
-
-@app.route('/api/health', methods=['GET'])
-def health_check():
-    """Health check endpoint"""
+    """Create tables if they don't exist"""
     try:
-        # Test database connection
-        db.session.execute('SELECT 1')
-        return jsonify({'status': 'healthy', 'message': 'Backend is running'}), 200
+        db.create_all()
     except Exception as e:
-        return jsonify({'status': 'unhealthy', 'error': str(e)}), 500
+        logger.error(f"Create tables error: {str(e)}")
 
+
+# ========================
+# APPLICATION ENTRY POINT
+# ========================
 
 if __name__ == '__main__':
-    # Only run with debug=False in production (gunicorn is used)
-    app.run(debug=False, host='0.0.0.0', port=5000)
+    logger.info("Starting Chess AI Backend")
+    init_db()
+    app.run(host='0.0.0.0', port=5000, debug=False)
