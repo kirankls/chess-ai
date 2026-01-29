@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import axios from 'axios';
 
 const API_BASE_URL = 'https://chess-backend-production-25ad.up.railway.app/api';
@@ -29,7 +29,7 @@ const ChessApp = () => {
   function initializeBoard() {
     const board = Array(8).fill(null).map(() => Array(8).fill(null));
     
-    // Black pieces
+    // Black pieces (top)
     board[0][0] = { type: 'rook', color: 'black' };
     board[0][1] = { type: 'knight', color: 'black' };
     board[0][2] = { type: 'bishop', color: 'black' };
@@ -44,7 +44,7 @@ const ChessApp = () => {
       board[6][i] = { type: 'pawn', color: 'white' };
     }
     
-    // White pieces
+    // White pieces (bottom)
     board[7][0] = { type: 'rook', color: 'white' };
     board[7][1] = { type: 'knight', color: 'white' };
     board[7][2] = { type: 'bishop', color: 'white' };
@@ -57,14 +57,20 @@ const ChessApp = () => {
     return board;
   }
 
-  // Get piece symbol
+  // Get piece symbol with better distinction
   function getPieceSymbol(piece) {
     if (!piece) return '';
+    
     const symbols = {
-      white: { pawn: '♙', rook: '♖', knight: '♘', bishop: '♗', queen: '♕', king: '♔' },
-      black: { pawn: '♟', rook: '♜', knight: '♞', bishop: '♝', queen: '♛', king: '♚' }
+      pawn: piece.color === 'white' ? '♙' : '♟',
+      rook: piece.color === 'white' ? '♖' : '♜',
+      knight: piece.color === 'white' ? '♘' : '♞',
+      bishop: piece.color === 'white' ? '♗' : '♝',
+      queen: piece.color === 'white' ? '♕' : '♛',
+      king: piece.color === 'white' ? '♔' : '♚'
     };
-    return symbols[piece.color]?.[piece.type] || '';
+    
+    return symbols[piece.type] || '';
   }
 
   // Get all possible moves
@@ -152,9 +158,59 @@ const ChessApp = () => {
     return moves;
   }
 
+  // Convert board to FEN-like notation for GPT
+  function boardToString(boardState) {
+    let boardStr = '';
+    for (let r = 0; r < 8; r++) {
+      for (let c = 0; c < 8; c++) {
+        const piece = boardState[r][c];
+        if (!piece) {
+          boardStr += '. ';
+        } else {
+          const symbol = piece.color === 'white' ? piece.type[0].toUpperCase() : piece.type[0].toLowerCase();
+          boardStr += symbol + ' ';
+        }
+      }
+      boardStr += '\n';
+    }
+    return boardStr;
+  }
+
+  // Get AI move using GPT
+  async function getGPTMove(boardState) {
+    try {
+      const boardStr = boardToString(boardState);
+      const prompt = `You are a chess AI playing as Black (lowercase pieces). Current board:
+${boardStr}
+
+Last move by White: ${moveHistory[moveHistory.length - 1] || 'opening'}
+
+Your difficulty level: ${difficulty}
+
+Provide ONLY the best move in format: from_square to_square (e.g., "e7 e5")
+Consider:
+- Easy: Make somewhat random legal moves
+- Medium: Play decent moves, capture when possible
+- Hard: Play optimal strategic moves, control center, protect pieces
+
+Your move:`;
+
+      const response = await apiClient.post('/chess/ai-move', {
+        board_state: boardStr,
+        difficulty: difficulty
+      });
+
+      // Parse response to get move
+      return response.data.move || null;
+    } catch (error) {
+      console.error('GPT API error:', error);
+      return null;
+    }
+  }
+
   // Handle square click
   const handleSquareClick = (row, col) => {
-    if (gameStatus !== 'ongoing' || currentTurn !== 'white') return;
+    if (gameStatus !== 'ongoing' || currentTurn !== 'white' || aiThinking) return;
 
     const piece = board[row][col];
 
@@ -193,13 +249,54 @@ const ChessApp = () => {
 
     setTimeout(() => {
       makeAIMove(newBoard);
-    }, 1000);
+    }, 1500);
   };
 
   // AI move
-  const makeAIMove = (boardState) => {
+  const makeAIMove = async (boardState) => {
     setAiThinking(true);
     
+    try {
+      // Try GPT first
+      const gptMove = await getGPTMove(boardState);
+      
+      if (gptMove) {
+        // Parse GPT move
+        const moveParts = gptMove.trim().split(' ');
+        if (moveParts.length === 2) {
+          const fromSquare = moveParts[0];
+          const toSquare = moveParts[1];
+          
+          const fromCol = fromSquare.charCodeAt(0) - 97;
+          const fromRow = 8 - parseInt(fromSquare[1]);
+          const toCol = toSquare.charCodeAt(0) - 97;
+          const toRow = 8 - parseInt(toSquare[1]);
+
+          if (fromRow >= 0 && fromRow < 8 && fromCol >= 0 && fromCol < 8 &&
+              toRow >= 0 && toRow < 8 && toCol >= 0 && toCol < 8) {
+            
+            const newBoard = boardState.map(row => [...row]);
+            const piece = newBoard[fromRow][fromCol];
+            
+            if (piece && piece.color === 'black') {
+              newBoard[toRow][toCol] = piece;
+              newBoard[fromRow][fromCol] = null;
+
+              setBoard(newBoard);
+              const moveNotation = `AI: ${String.fromCharCode(97 + fromCol)}${8 - fromRow} → ${String.fromCharCode(97 + toCol)}${8 - toRow}`;
+              setMoveHistory(prev => [...prev, moveNotation]);
+              setCurrentTurn('white');
+              setAiThinking(false);
+              return;
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error getting GPT move:', error);
+    }
+
+    // Fallback to random move if GPT fails
     let allMoves = [];
     for (let r = 0; r < 8; r++) {
       for (let c = 0; c < 8; c++) {
@@ -223,7 +320,7 @@ const ChessApp = () => {
 
       setBoard(newBoard);
       const moveNotation = `AI: ${String.fromCharCode(97 + randomMove.from[1])}${8 - randomMove.from[0]} → ${String.fromCharCode(97 + randomMove.to[1])}${8 - randomMove.to[0]}`;
-      setMoveHistory([...moveHistory, moveNotation]);
+      setMoveHistory(prev => [...prev, moveNotation]);
       setCurrentTurn('white');
     }
 
@@ -267,34 +364,27 @@ const ChessApp = () => {
   };
 
   // Start game
-  const startNewGame = async () => {
-    try {
-      await apiClient.post('/games', {
-        player_id: currentPlayer.id,
-        difficulty: difficulty
-      });
-      setBoard(initializeBoard());
-      setMoveHistory([]);
-      setCurrentTurn('white');
-      setGameStatus('ongoing');
-      setSelectedSquare(null);
-      setLegalMoves([]);
-      setGameMode('playing');
-    } catch (error) {
-      alert('Failed to create game: ' + error.message);
-    }
+  const startNewGame = () => {
+    setBoard(initializeBoard());
+    setMoveHistory([]);
+    setCurrentTurn('white');
+    setGameStatus('ongoing');
+    setSelectedSquare(null);
+    setLegalMoves([]);
+    setGameMode('playing');
   };
 
   // Render board
   const renderBoard = () => {
-    const boardSize = 50;
+    const boardSize = 60;
     return (
       <div style={{
         display: 'grid',
         gridTemplateColumns: `repeat(8, ${boardSize}px)`,
         gap: '0',
         backgroundColor: '#333',
-        marginTop: '20px'
+        marginTop: '20px',
+        border: '2px solid #666'
       }}>
         {board.map((row, r) =>
           row.map((piece, c) => {
@@ -313,17 +403,18 @@ const ChessApp = () => {
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  fontSize: '32px',
-                  cursor: 'pointer',
-                  position: 'relative'
+                  fontSize: '48px',
+                  cursor: aiThinking || currentTurn !== 'white' ? 'not-allowed' : 'pointer',
+                  position: 'relative',
+                  fontWeight: 'bold'
                 }}
               >
                 {piece && getPieceSymbol(piece)}
                 {isLegal && (
                   <div style={{
                     position: 'absolute',
-                    width: '10px',
-                    height: '10px',
+                    width: '14px',
+                    height: '14px',
                     backgroundColor: '#2ecc71',
                     borderRadius: '50%'
                   }} />
@@ -438,7 +529,7 @@ const ChessApp = () => {
     );
   }
 
-  // HOME SCREEN (Menu)
+  // HOME SCREEN
   if (gameMode === 'home') {
     return (
       <div style={{
@@ -465,7 +556,6 @@ const ChessApp = () => {
             Challenge your mind against an AI opponent or sharpen your skills in training mode
           </p>
 
-          {/* Play vs AI */}
           <div
             onClick={() => setGameMode('menu')}
             style={{
@@ -477,11 +567,8 @@ const ChessApp = () => {
               cursor: 'pointer',
               display: 'flex',
               justifyContent: 'space-between',
-              alignItems: 'center',
-              transition: 'all 0.3s'
+              alignItems: 'center'
             }}
-            onMouseOver={(e) => e.target.style.backgroundColor = '#252541'}
-            onMouseOut={(e) => e.target.style.backgroundColor = '#1a1a2e'}
           >
             <div>
               <div style={{ fontSize: '24px', marginBottom: '8px' }}>⚔️ Play vs AI</div>
@@ -490,53 +577,30 @@ const ChessApp = () => {
             <div style={{ fontSize: '24px', color: '#f39c12' }}>›</div>
           </div>
 
-          {/* Training Mode */}
-          <div
-            style={{
-              backgroundColor: '#1a1a2e',
-              border: '1px solid #333',
-              padding: '20px',
-              borderRadius: '10px',
-              marginBottom: '15px',
-              cursor: 'pointer',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              transition: 'all 0.3s',
-              opacity: 0.6
-            }}
-          >
-            <div>
-              <div style={{ fontSize: '24px', marginBottom: '8px' }}>📚 Training Mode</div>
-              <div style={{ fontSize: '14px', color: '#999' }}>Learn moves, tactics, and strategies</div>
-            </div>
-            <div style={{ fontSize: '24px', color: '#f39c12' }}>›</div>
+          <div style={{
+            backgroundColor: '#1a1a2e',
+            border: '1px solid #333',
+            padding: '20px',
+            borderRadius: '10px',
+            marginBottom: '15px',
+            opacity: 0.6
+          }}>
+            <div style={{ fontSize: '24px', marginBottom: '8px' }}>📚 Training Mode</div>
+            <div style={{ fontSize: '14px', color: '#999' }}>Learn moves, tactics, and strategies</div>
           </div>
 
-          {/* Saved Games */}
-          <div
-            style={{
-              backgroundColor: '#1a1a2e',
-              border: '1px solid #333',
-              padding: '20px',
-              borderRadius: '10px',
-              marginBottom: '30px',
-              cursor: 'pointer',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              transition: 'all 0.3s',
-              opacity: 0.6
-            }}
-          >
-            <div>
-              <div style={{ fontSize: '24px', marginBottom: '8px' }}>💾 Saved Games</div>
-              <div style={{ fontSize: '14px', color: '#999' }}>Continue your previous games</div>
-            </div>
-            <div style={{ fontSize: '24px', color: '#f39c12' }}>›</div>
+          <div style={{
+            backgroundColor: '#1a1a2e',
+            border: '1px solid #333',
+            padding: '20px',
+            borderRadius: '10px',
+            marginBottom: '30px',
+            opacity: 0.6
+          }}>
+            <div style={{ fontSize: '24px', marginBottom: '8px' }}>💾 Saved Games</div>
+            <div style={{ fontSize: '14px', color: '#999' }}>Continue your previous games</div>
           </div>
 
-          {/* Logout */}
           <button
             onClick={handleLogout}
             style={{
@@ -625,7 +689,6 @@ const ChessApp = () => {
         justifyContent: 'center'
       }}>
         <div style={{ display: 'flex', gap: '30px', maxWidth: '1200px' }}>
-          {/* Chessboard */}
           <div>
             <div style={{
               display: 'flex',
@@ -662,7 +725,7 @@ const ChessApp = () => {
                 </strong>
               </p>
               <p>Moves: {moveHistory.length}</p>
-              {aiThinking && <p style={{ color: '#f39c12' }}>🤖 AI is thinking...</p>}
+              {aiThinking && <p style={{ color: '#f39c12', fontWeight: 'bold' }}>🤖 AI is thinking...</p>}
             </div>
 
             {renderBoard()}
@@ -705,7 +768,7 @@ const ChessApp = () => {
             </div>
           </div>
 
-          {/* Move History - Vertical */}
+          {/* Move History */}
           <div style={{
             backgroundColor: '#1a1a2e',
             padding: '20px',
