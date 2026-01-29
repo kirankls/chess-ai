@@ -4,7 +4,6 @@ import axios from 'axios';
 const API_BASE_URL = 'https://chess-backend-production-25ad.up.railway.app/api';
 
 const ChessApp = () => {
-  // Auth State
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [currentPlayer, setCurrentPlayer] = useState(null);
   const [username, setUsername] = useState('');
@@ -12,7 +11,6 @@ const ChessApp = () => {
   const [email, setEmail] = useState('');
   const [isRegistering, setIsRegistering] = useState(false);
 
-  // Game State
   const [gameMode, setGameMode] = useState('menu');
   const [difficulty, setDifficulty] = useState('medium');
   const [board, setBoard] = useState(initializeBoard());
@@ -29,7 +27,6 @@ const ChessApp = () => {
   function initializeBoard() {
     const board = Array(8).fill(null).map(() => Array(8).fill(null));
     
-    // Black pieces (top)
     board[0][0] = { type: 'rook', color: 'black' };
     board[0][1] = { type: 'knight', color: 'black' };
     board[0][2] = { type: 'bishop', color: 'black' };
@@ -44,7 +41,6 @@ const ChessApp = () => {
       board[6][i] = { type: 'pawn', color: 'white' };
     }
     
-    // White pieces (bottom)
     board[7][0] = { type: 'rook', color: 'white' };
     board[7][1] = { type: 'knight', color: 'white' };
     board[7][2] = { type: 'bishop', color: 'white' };
@@ -57,23 +53,46 @@ const ChessApp = () => {
     return board;
   }
 
-  // Get piece symbol with better distinction
-  function getPieceSymbol(piece) {
-    if (!piece) return '';
-    
+  // Render piece with much larger size
+  function renderPiece(piece) {
+    if (!piece) return null;
+
+    const isBlack = piece.color === 'black';
+    const pieceSize = 90; // Much larger!
+
+    // Piece symbols - black pieces are much darker, white pieces are much lighter
     const symbols = {
-      pawn: piece.color === 'white' ? '♙' : '♟',
-      rook: piece.color === 'white' ? '♖' : '♜',
-      knight: piece.color === 'white' ? '♘' : '♞',
-      bishop: piece.color === 'white' ? '♗' : '♝',
-      queen: piece.color === 'white' ? '♕' : '♛',
-      king: piece.color === 'white' ? '♔' : '♚'
+      pawn: isBlack ? '♟' : '♙',
+      rook: isBlack ? '♜' : '♖',
+      knight: isBlack ? '♞' : '♘',
+      bishop: isBlack ? '♝' : '♗',
+      queen: isBlack ? '♛' : '♕',
+      king: isBlack ? '♚' : '♔'
     };
-    
-    return symbols[piece.type] || '';
+
+    return (
+      <div
+        style={{
+          fontSize: pieceSize,
+          fontWeight: 'bold',
+          color: isBlack ? '#000000' : '#FFFFFF',
+          textShadow: isBlack 
+            ? '0 0 0 2px #000000, 0 0 3px rgba(0,0,0,0.8)' 
+            : '0 0 0 2px #CCCCCC, 0 0 3px rgba(100,100,100,0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          width: '100%',
+          height: '100%',
+          filter: isBlack ? 'brightness(0.9)' : 'brightness(1.1)'
+        }}
+      >
+        {symbols[piece.type]}
+      </div>
+    );
   }
 
-  // Get all possible moves
+  // Get all moves
   function getAllMovesForPiece(boardState, row, col) {
     const piece = boardState[row][col];
     if (!piece) return [];
@@ -158,53 +177,85 @@ const ChessApp = () => {
     return moves;
   }
 
-  // Convert board to FEN-like notation for GPT
-  function boardToString(boardState) {
-    let boardStr = '';
+  // Smart AI move selection
+  function findBestAIMove(boardState) {
+    let moveOptions = [];
+    const pieceValues = { pawn: 1, knight: 3, bishop: 3, rook: 5, queen: 9, king: 1000 };
+    
+    // Generate all possible moves
     for (let r = 0; r < 8; r++) {
       for (let c = 0; c < 8; c++) {
         const piece = boardState[r][c];
-        if (!piece) {
-          boardStr += '. ';
-        } else {
-          const symbol = piece.color === 'white' ? piece.type[0].toUpperCase() : piece.type[0].toLowerCase();
-          boardStr += symbol + ' ';
+        if (piece && piece.color === 'black') {
+          const moves = getAllMovesForPiece(boardState, r, c);
+          
+          for (let move of moves) {
+            let moveScore = 0;
+
+            // Check what we can capture
+            const target = boardState[move[0]][move[1]];
+            if (target) {
+              moveScore += pieceValues[target.type] * 10; // Prioritize captures
+            }
+
+            // Pawn promotion
+            if (piece.type === 'pawn' && move[0] === 7) {
+              moveScore += 80; // Very high priority
+            }
+
+            // Center control (rows/cols 3-4)
+            const centerBonus = (3 <= move[1] && move[1] <= 4) && (3 <= move[0] && move[0] <= 4) ? 3 : 0;
+            moveScore += centerBonus;
+
+            // Pawn advancement
+            if (piece.type === 'pawn' && move[0] > r) {
+              moveScore += 2;
+            }
+
+            // Piece protection
+            let protectedCount = 0;
+            for (let pr = 0; pr < 8; pr++) {
+              for (let pc = 0; pc < 8; pc++) {
+                const protector = boardState[pr][pc];
+                if (protector && protector.color === 'black' && (pr !== r || pc !== c)) {
+                  const protectorMoves = getAllMovesForPiece(boardState, pr, pc);
+                  if (protectorMoves.some(m => m[0] === move[0] && m[1] === move[1])) {
+                    protectedCount++;
+                  }
+                }
+              }
+            }
+            moveScore += protectedCount;
+
+            moveOptions.push({
+              from: [r, c],
+              to: move,
+              score: moveScore,
+              isCapture: !!target,
+              piece: piece.type
+            });
+          }
         }
       }
-      boardStr += '\n';
     }
-    return boardStr;
-  }
 
-  // Get AI move using GPT
-  async function getGPTMove(boardState) {
-    try {
-      const boardStr = boardToString(boardState);
-      const prompt = `You are a chess AI playing as Black (lowercase pieces). Current board:
-${boardStr}
+    if (moveOptions.length === 0) return null;
 
-Last move by White: ${moveHistory[moveHistory.length - 1] || 'opening'}
+    // Sort by score (highest first)
+    moveOptions.sort((a, b) => b.score - a.score);
 
-Your difficulty level: ${difficulty}
-
-Provide ONLY the best move in format: from_square to_square (e.g., "e7 e5")
-Consider:
-- Easy: Make somewhat random legal moves
-- Medium: Play decent moves, capture when possible
-- Hard: Play optimal strategic moves, control center, protect pieces
-
-Your move:`;
-
-      const response = await apiClient.post('/chess/ai-move', {
-        board_state: boardStr,
-        difficulty: difficulty
-      });
-
-      // Parse response to get move
-      return response.data.move || null;
-    } catch (error) {
-      console.error('GPT API error:', error);
-      return null;
+    // Difficulty-based selection
+    if (difficulty === 'easy') {
+      // Play one of the random decent moves
+      const topMoves = moveOptions.slice(0, Math.min(8, moveOptions.length));
+      return topMoves[Math.floor(Math.random() * topMoves.length)];
+    } else if (difficulty === 'medium') {
+      // Play from top 3 good moves
+      const topMoves = moveOptions.slice(0, Math.min(3, moveOptions.length));
+      return topMoves[Math.floor(Math.random() * topMoves.length)];
+    } else {
+      // Play the best move (hard)
+      return moveOptions[0];
     }
   }
 
@@ -232,7 +283,7 @@ Your move:`;
     setLegalMoves([]);
   };
 
-  // Make a move
+  // Make move
   const makeMove = (fromRow, fromCol, toRow, toCol) => {
     const newBoard = board.map(row => [...row]);
     const piece = newBoard[fromRow][fromCol];
@@ -249,85 +300,34 @@ Your move:`;
 
     setTimeout(() => {
       makeAIMove(newBoard);
-    }, 1500);
+    }, 1200);
   };
 
   // AI move
-  const makeAIMove = async (boardState) => {
+  const makeAIMove = (boardState) => {
     setAiThinking(true);
     
-    try {
-      // Try GPT first
-      const gptMove = await getGPTMove(boardState);
+    setTimeout(() => {
+      const bestMove = findBestAIMove(boardState);
       
-      if (gptMove) {
-        // Parse GPT move
-        const moveParts = gptMove.trim().split(' ');
-        if (moveParts.length === 2) {
-          const fromSquare = moveParts[0];
-          const toSquare = moveParts[1];
-          
-          const fromCol = fromSquare.charCodeAt(0) - 97;
-          const fromRow = 8 - parseInt(fromSquare[1]);
-          const toCol = toSquare.charCodeAt(0) - 97;
-          const toRow = 8 - parseInt(toSquare[1]);
+      if (bestMove) {
+        const newBoard = boardState.map(row => [...row]);
+        const piece = newBoard[bestMove.from[0]][bestMove.from[1]];
+        
+        newBoard[bestMove.to[0]][bestMove.to[1]] = piece;
+        newBoard[bestMove.from[0]][bestMove.from[1]] = null;
 
-          if (fromRow >= 0 && fromRow < 8 && fromCol >= 0 && fromCol < 8 &&
-              toRow >= 0 && toRow < 8 && toCol >= 0 && toCol < 8) {
-            
-            const newBoard = boardState.map(row => [...row]);
-            const piece = newBoard[fromRow][fromCol];
-            
-            if (piece && piece.color === 'black') {
-              newBoard[toRow][toCol] = piece;
-              newBoard[fromRow][fromCol] = null;
-
-              setBoard(newBoard);
-              const moveNotation = `AI: ${String.fromCharCode(97 + fromCol)}${8 - fromRow} → ${String.fromCharCode(97 + toCol)}${8 - toRow}`;
-              setMoveHistory(prev => [...prev, moveNotation]);
-              setCurrentTurn('white');
-              setAiThinking(false);
-              return;
-            }
-          }
-        }
+        setBoard(newBoard);
+        const moveNotation = `AI: ${String.fromCharCode(97 + bestMove.from[1])}${8 - bestMove.from[0]} → ${String.fromCharCode(97 + bestMove.to[1])}${8 - bestMove.to[0]}`;
+        setMoveHistory(prev => [...prev, moveNotation]);
+        setCurrentTurn('white');
       }
-    } catch (error) {
-      console.error('Error getting GPT move:', error);
-    }
 
-    // Fallback to random move if GPT fails
-    let allMoves = [];
-    for (let r = 0; r < 8; r++) {
-      for (let c = 0; c < 8; c++) {
-        const piece = boardState[r][c];
-        if (piece && piece.color === 'black') {
-          const moves = getAllMovesForPiece(boardState, r, c);
-          for (let move of moves) {
-            allMoves.push({ from: [r, c], to: move });
-          }
-        }
-      }
-    }
-
-    if (allMoves.length > 0) {
-      const randomMove = allMoves[Math.floor(Math.random() * allMoves.length)];
-      const newBoard = boardState.map(row => [...row]);
-      const piece = newBoard[randomMove.from[0]][randomMove.from[1]];
-      
-      newBoard[randomMove.to[0]][randomMove.to[1]] = piece;
-      newBoard[randomMove.from[0]][randomMove.from[1]] = null;
-
-      setBoard(newBoard);
-      const moveNotation = `AI: ${String.fromCharCode(97 + randomMove.from[1])}${8 - randomMove.from[0]} → ${String.fromCharCode(97 + randomMove.to[1])}${8 - randomMove.to[0]}`;
-      setMoveHistory(prev => [...prev, moveNotation]);
-      setCurrentTurn('white');
-    }
-
-    setAiThinking(false);
+      setAiThinking(false);
+    }, 800);
   };
 
-  // Auth handlers
+  // Auth
   const handleLogin = async (e) => {
     e.preventDefault();
     try {
@@ -363,28 +363,17 @@ Your move:`;
     setGameMode('menu');
   };
 
-  // Start game
-  const startNewGame = () => {
-    setBoard(initializeBoard());
-    setMoveHistory([]);
-    setCurrentTurn('white');
-    setGameStatus('ongoing');
-    setSelectedSquare(null);
-    setLegalMoves([]);
-    setGameMode('playing');
-  };
-
   // Render board
   const renderBoard = () => {
-    const boardSize = 60;
+    const squareSize = 90; // Larger squares for larger pieces
     return (
       <div style={{
         display: 'grid',
-        gridTemplateColumns: `repeat(8, ${boardSize}px)`,
+        gridTemplateColumns: `repeat(8, ${squareSize}px)`,
         gap: '0',
         backgroundColor: '#333',
         marginTop: '20px',
-        border: '2px solid #666'
+        border: '4px solid #333'
       }}>
         {board.map((row, r) =>
           row.map((piece, c) => {
@@ -397,26 +386,27 @@ Your move:`;
                 key={`${r}-${c}`}
                 onClick={() => handleSquareClick(r, c)}
                 style={{
-                  width: `${boardSize}px`,
-                  height: `${boardSize}px`,
+                  width: `${squareSize}px`,
+                  height: `${squareSize}px`,
                   backgroundColor: isSelected ? '#e74c3c' : isLegal ? '#2ecc71' : isLight ? '#f0d9b5' : '#b58863',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  fontSize: '48px',
                   cursor: aiThinking || currentTurn !== 'white' ? 'not-allowed' : 'pointer',
                   position: 'relative',
-                  fontWeight: 'bold'
+                  border: '1px solid rgba(0,0,0,0.1)'
                 }}
               >
-                {piece && getPieceSymbol(piece)}
+                {piece && renderPiece(piece)}
                 {isLegal && (
                   <div style={{
                     position: 'absolute',
-                    width: '14px',
-                    height: '14px',
+                    width: '20px',
+                    height: '20px',
                     backgroundColor: '#2ecc71',
-                    borderRadius: '50%'
+                    borderRadius: '50%',
+                    opacity: 0.8,
+                    border: '2px solid #1abc9c'
                   }} />
                 )}
               </div>
@@ -427,7 +417,7 @@ Your move:`;
     );
   };
 
-  // LOGIN SCREEN
+  // LOGIN
   if (!isLoggedIn) {
     return (
       <div style={{
@@ -529,7 +519,7 @@ Your move:`;
     );
   }
 
-  // HOME SCREEN
+  // HOME
   if (gameMode === 'home') {
     return (
       <div style={{
@@ -539,21 +529,11 @@ Your move:`;
         backgroundImage: 'linear-gradient(135deg, #1a1a2e 0%, #0a0a0a 100%)'
       }}>
         <div style={{ maxWidth: '800px', margin: '0 auto' }}>
-          <h1 style={{
-            textAlign: 'center',
-            fontSize: '48px',
-            marginBottom: '15px',
-            color: '#fff'
-          }}>
+          <h1 style={{ textAlign: 'center', fontSize: '48px', marginBottom: '15px', color: '#fff' }}>
             ♔ Chess Master ♔
           </h1>
-          <p style={{
-            textAlign: 'center',
-            fontSize: '18px',
-            color: '#bbb',
-            marginBottom: '60px'
-          }}>
-            Challenge your mind against an AI opponent or sharpen your skills in training mode
+          <p style={{ textAlign: 'center', fontSize: '18px', color: '#bbb', marginBottom: '60px' }}>
+            Challenge your mind against an intelligent AI opponent
           </p>
 
           <div
@@ -572,33 +552,9 @@ Your move:`;
           >
             <div>
               <div style={{ fontSize: '24px', marginBottom: '8px' }}>⚔️ Play vs AI</div>
-              <div style={{ fontSize: '14px', color: '#999' }}>Challenge the AI at three difficulty levels</div>
+              <div style={{ fontSize: '14px', color: '#999' }}>Three difficulty levels</div>
             </div>
             <div style={{ fontSize: '24px', color: '#f39c12' }}>›</div>
-          </div>
-
-          <div style={{
-            backgroundColor: '#1a1a2e',
-            border: '1px solid #333',
-            padding: '20px',
-            borderRadius: '10px',
-            marginBottom: '15px',
-            opacity: 0.6
-          }}>
-            <div style={{ fontSize: '24px', marginBottom: '8px' }}>📚 Training Mode</div>
-            <div style={{ fontSize: '14px', color: '#999' }}>Learn moves, tactics, and strategies</div>
-          </div>
-
-          <div style={{
-            backgroundColor: '#1a1a2e',
-            border: '1px solid #333',
-            padding: '20px',
-            borderRadius: '10px',
-            marginBottom: '30px',
-            opacity: 0.6
-          }}>
-            <div style={{ fontSize: '24px', marginBottom: '8px' }}>💾 Saved Games</div>
-            <div style={{ fontSize: '14px', color: '#999' }}>Continue your previous games</div>
           </div>
 
           <button
@@ -612,7 +568,8 @@ Your move:`;
               borderRadius: '8px',
               cursor: 'pointer',
               fontSize: '16px',
-              fontWeight: 'bold'
+              fontWeight: 'bold',
+              marginTop: '40px'
             }}
           >
             LOGOUT
@@ -622,7 +579,7 @@ Your move:`;
     );
   }
 
-  // DIFFICULTY SELECT
+  // DIFFICULTY
   if (gameMode === 'menu') {
     return (
       <div style={{
@@ -640,7 +597,13 @@ Your move:`;
             key={level}
             onClick={() => {
               setDifficulty(level);
-              startNewGame();
+              setBoard(initializeBoard());
+              setMoveHistory([]);
+              setCurrentTurn('white');
+              setGameStatus('ongoing');
+              setSelectedSquare(null);
+              setLegalMoves([]);
+              setGameMode('playing');
             }}
             style={{
               width: '100%',
@@ -678,7 +641,7 @@ Your move:`;
     );
   }
 
-  // GAME SCREEN
+  // GAME
   if (gameMode === 'playing') {
     return (
       <div style={{
@@ -725,7 +688,7 @@ Your move:`;
                 </strong>
               </p>
               <p>Moves: {moveHistory.length}</p>
-              {aiThinking && <p style={{ color: '#f39c12', fontWeight: 'bold' }}>🤖 AI is thinking...</p>}
+              {aiThinking && <p style={{ color: '#f39c12', fontWeight: 'bold' }}>🤖 Thinking...</p>}
             </div>
 
             {renderBoard()}
@@ -768,7 +731,6 @@ Your move:`;
             </div>
           </div>
 
-          {/* Move History */}
           <div style={{
             backgroundColor: '#1a1a2e',
             padding: '20px',
