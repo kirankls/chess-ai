@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 
-// Hardcoded backend URL for testing
+// Hardcoded backend URL
 const API_BASE_URL = 'https://chess-backend-production-25ad.up.railway.app/api';
 
 const ChessApp = () => {
@@ -16,38 +16,216 @@ const ChessApp = () => {
   // Game State
   const [gameMode, setGameMode] = useState('menu');
   const [difficulty, setDifficulty] = useState('medium');
-  const [board, setBoard] = useState(initializeBoard());
+  const [board, setBoard] = useState(createInitialBoard());
   const [selectedSquare, setSelectedSquare] = useState(null);
   const [legalMoves, setLegalMoves] = useState([]);
   const [moveHistory, setMoveHistory] = useState([]);
-  const [whiteTime, setWhiteTime] = useState(600);
-  const [blackTime, setBlackTime] = useState(600);
   const [currentTurn, setCurrentTurn] = useState('white');
   const [gameStatus, setGameStatus] = useState('ongoing');
   const [gameId, setGameId] = useState(null);
   const [aiThinking, setAiThinking] = useState(false);
 
-  const timerRef = useRef(null);
   const apiClient = axios.create({ baseURL: API_BASE_URL });
 
-  // Initialize board
-  function initializeBoard() {
+  // Initialize chess board
+  function createInitialBoard() {
     const board = Array(8).fill(null).map(() => Array(8).fill(null));
-    const pieces = { 'a': 'rook', 'b': 'knight', 'c': 'bishop', 'd': 'queen', 'e': 'king', 'f': 'bishop', 'g': 'knight', 'h': 'rook' };
-    const fileMap = { a: 0, b: 1, c: 2, d: 3, e: 4, f: 5, g: 6, h: 7 };
-
-    for (let file in pieces) {
-      board[0][fileMap[file]] = { type: pieces[file], color: 'black' };
-      board[1][fileMap[file]] = { type: 'pawn', color: 'black' };
+    
+    // Setup pawns
+    for (let i = 0; i < 8; i++) {
+      board[1][i] = { type: 'pawn', color: 'black' };
+      board[6][i] = { type: 'pawn', color: 'white' };
     }
 
-    for (let file in pieces) {
-      board[6][fileMap[file]] = { type: 'pawn', color: 'white' };
-      board[7][fileMap[file]] = { type: pieces[file], color: 'white' };
+    // Setup back row
+    const backRow = ['rook', 'knight', 'bishop', 'queen', 'king', 'bishop', 'knight', 'rook'];
+    for (let i = 0; i < 8; i++) {
+      board[0][i] = { type: backRow[i], color: 'black' };
+      board[7][i] = { type: backRow[i], color: 'white' };
     }
 
     return board;
   }
+
+  // Get piece symbol
+  function getPieceSymbol(piece) {
+    if (!piece) return '';
+    const symbols = {
+      white: { pawn: '♙', rook: '♖', knight: '♘', bishop: '♗', queen: '♕', king: '♔' },
+      black: { pawn: '♟', rook: '♜', knight: '♞', bishop: '♝', queen: '♛', king: '♚' }
+    };
+    return symbols[piece.color][piece.type];
+  }
+
+  // Get all possible moves for a piece
+  function getAllMovesForPiece(boardState, row, col) {
+    const piece = boardState[row][col];
+    if (!piece) return [];
+
+    let moves = [];
+    const { type, color } = piece;
+
+    if (type === 'pawn') {
+      const direction = color === 'white' ? -1 : 1;
+      const startRow = color === 'white' ? 6 : 1;
+
+      // Forward move
+      if (boardState[row + direction]?.[col] === null) {
+        moves.push([row + direction, col]);
+
+        // Double move from start
+        if (row === startRow && boardState[row + 2 * direction]?.[col] === null) {
+          moves.push([row + 2 * direction, col]);
+        }
+      }
+
+      // Captures
+      for (let dc of [-1, 1]) {
+        const newRow = row + direction;
+        const newCol = col + dc;
+        if (newRow >= 0 && newRow < 8 && newCol >= 0 && newCol < 8) {
+          const target = boardState[newRow][newCol];
+          if (target && target.color !== color) {
+            moves.push([newRow, newCol]);
+          }
+        }
+      }
+    } else if (type === 'knight') {
+      const knightMoves = [
+        [-2, -1], [-2, 1], [-1, -2], [-1, 2],
+        [1, -2], [1, 2], [2, -1], [2, 1]
+      ];
+      for (let [dr, dc] of knightMoves) {
+        const newRow = row + dr;
+        const newCol = col + dc;
+        if (newRow >= 0 && newRow < 8 && newCol >= 0 && newCol < 8) {
+          const target = boardState[newRow][newCol];
+          if (!target || target.color !== color) {
+            moves.push([newRow, newCol]);
+          }
+        }
+      }
+    } else if (type === 'bishop' || type === 'rook' || type === 'queen') {
+      const directions = type === 'bishop' ? [[-1, -1], [-1, 1], [1, -1], [1, 1]] :
+        type === 'rook' ? [[-1, 0], [1, 0], [0, -1], [0, 1]] :
+        [[-1, -1], [-1, 1], [1, -1], [1, 1], [-1, 0], [1, 0], [0, -1], [0, 1]];
+
+      for (let [dr, dc] of directions) {
+        for (let i = 1; i < 8; i++) {
+          const newRow = row + dr * i;
+          const newCol = col + dc * i;
+          if (newRow < 0 || newRow >= 8 || newCol < 0 || newCol >= 8) break;
+          
+          const target = boardState[newRow][newCol];
+          if (!target) {
+            moves.push([newRow, newCol]);
+          } else {
+            if (target.color !== color) {
+              moves.push([newRow, newCol]);
+            }
+            break;
+          }
+        }
+      }
+    } else if (type === 'king') {
+      for (let dr = -1; dr <= 1; dr++) {
+        for (let dc = -1; dc <= 1; dc++) {
+          if (dr === 0 && dc === 0) continue;
+          const newRow = row + dr;
+          const newCol = col + dc;
+          if (newRow >= 0 && newRow < 8 && newCol >= 0 && newCol < 8) {
+            const target = boardState[newRow][newCol];
+            if (!target || target.color !== color) {
+              moves.push([newRow, newCol]);
+            }
+          }
+        }
+      }
+    }
+
+    return moves;
+  }
+
+  // Handle square click
+  const handleSquareClick = (row, col) => {
+    if (gameStatus !== 'ongoing' || currentTurn !== 'white') return;
+
+    const piece = board[row][col];
+
+    // If clicking on own piece, select it
+    if (piece && piece.color === 'white') {
+      setSelectedSquare([row, col]);
+      setLegalMoves(getAllMovesForPiece(board, row, col));
+      return;
+    }
+
+    // If clicking on a legal move, make the move
+    if (selectedSquare) {
+      const isLegalMove = legalMoves.some(move => move[0] === row && move[1] === col);
+      if (isLegalMove) {
+        makeMove(selectedSquare[0], selectedSquare[1], row, col);
+        return;
+      }
+    }
+
+    setSelectedSquare(null);
+    setLegalMoves([]);
+  };
+
+  // Make a move
+  const makeMove = (fromRow, fromCol, toRow, toCol) => {
+    const newBoard = board.map(row => [...row]);
+    const piece = newBoard[fromRow][fromCol];
+    
+    newBoard[toRow][toCol] = piece;
+    newBoard[fromRow][fromCol] = null;
+
+    setBoard(newBoard);
+    setMoveHistory([...moveHistory, `${String.fromCharCode(97 + fromCol)}${8 - fromRow} → ${String.fromCharCode(97 + toCol)}${8 - toRow}`]);
+    setSelectedSquare(null);
+    setLegalMoves([]);
+    setCurrentTurn('black');
+
+    // AI makes a move after a short delay
+    setTimeout(() => {
+      makeAIMove(newBoard);
+    }, 1000);
+  };
+
+  // AI makes a random move
+  const makeAIMove = (boardState) => {
+    setAiThinking(true);
+    
+    // Find all possible moves for black pieces
+    let allMoves = [];
+    for (let r = 0; r < 8; r++) {
+      for (let c = 0; c < 8; c++) {
+        const piece = boardState[r][c];
+        if (piece && piece.color === 'black') {
+          const moves = getAllMovesForPiece(boardState, r, c);
+          for (let move of moves) {
+            allMoves.push({ from: [r, c], to: move });
+          }
+        }
+      }
+    }
+
+    if (allMoves.length > 0) {
+      // Random move
+      const randomMove = allMoves[Math.floor(Math.random() * allMoves.length)];
+      const newBoard = boardState.map(row => [...row]);
+      const piece = newBoard[randomMove.from[0]][randomMove.from[1]];
+      
+      newBoard[randomMove.to[0]][randomMove.to[1]] = piece;
+      newBoard[randomMove.from[0]][randomMove.from[1]] = null;
+
+      setBoard(newBoard);
+      setMoveHistory(prev => [...prev, `AI: ${String.fromCharCode(97 + randomMove.from[1])}${8 - randomMove.from[0]} → ${String.fromCharCode(97 + randomMove.to[1])}${8 - randomMove.to[0]}`]);
+      setCurrentTurn('white');
+    }
+
+    setAiThinking(false);
+  };
 
   // Handle login
   const handleLogin = async (e) => {
@@ -95,10 +273,12 @@ const ChessApp = () => {
         difficulty: difficulty
       });
       setGameId(response.data.game.id);
-      setBoard(initializeBoard());
+      setBoard(createInitialBoard());
       setMoveHistory([]);
       setCurrentTurn('white');
       setGameStatus('ongoing');
+      setSelectedSquare(null);
+      setLegalMoves([]);
       setGameMode('playing');
     } catch (error) {
       alert('Failed to create game: ' + error.message);
@@ -108,27 +288,34 @@ const ChessApp = () => {
   // Render chess board
   const renderBoard = () => {
     return (
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(8, 40px)', gap: '1px', backgroundColor: '#333', padding: '5px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(8, 50px)', gap: '1px', backgroundColor: '#333', padding: '5px', margin: '20px auto' }}>
         {board.map((row, r) =>
-          row.map((piece, f) => (
-            <div
-              key={`${r}-${f}`}
-              style={{
-                width: '40px',
-                height: '40px',
-                backgroundColor: (r + f) % 2 === 0 ? '#ddd' : '#999',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: '20px',
-                cursor: 'pointer',
-                border: selectedSquare && selectedSquare[0] === r && selectedSquare[1] === f ? '2px solid red' : 'none'
-              }}
-              onClick={() => setSelectedSquare([r, f])}
-            >
-              {piece ? (piece.color === 'white' ? '♙' : '♟') : ''}
-            </div>
-          ))
+          row.map((piece, c) => {
+            const isSelected = selectedSquare && selectedSquare[0] === r && selectedSquare[1] === c;
+            const isLegal = legalMoves.some(move => move[0] === r && move[1] === c);
+            const isLight = (r + c) % 2 === 0;
+            
+            return (
+              <div
+                key={`${r}-${c}`}
+                style={{
+                  width: '50px',
+                  height: '50px',
+                  backgroundColor: isSelected ? '#ff6b6b' : isLegal ? '#4CAF50' : isLight ? '#ddd' : '#888',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '32px',
+                  cursor: 'pointer',
+                  border: isSelected ? '3px solid red' : 'none',
+                  userSelect: 'none'
+                }}
+                onClick={() => handleSquareClick(r, c)}
+              >
+                {getPieceSymbol(piece)}
+              </div>
+            );
+          })
         )}
       </div>
     );
@@ -145,7 +332,7 @@ const ChessApp = () => {
             placeholder="Username"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
-            style={{ width: '100%', padding: '10px', marginBottom: '10px', borderRadius: '5px', border: 'none' }}
+            style={{ width: '100%', padding: '10px', marginBottom: '10px', borderRadius: '5px', border: 'none', boxSizing: 'border-box' }}
             required
           />
           {isRegistering && (
@@ -154,7 +341,7 @@ const ChessApp = () => {
               placeholder="Email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              style={{ width: '100%', padding: '10px', marginBottom: '10px', borderRadius: '5px', border: 'none' }}
+              style={{ width: '100%', padding: '10px', marginBottom: '10px', borderRadius: '5px', border: 'none', boxSizing: 'border-box' }}
               required
             />
           )}
@@ -163,7 +350,7 @@ const ChessApp = () => {
             placeholder="Password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            style={{ width: '100%', padding: '10px', marginBottom: '10px', borderRadius: '5px', border: 'none' }}
+            style={{ width: '100%', padding: '10px', marginBottom: '10px', borderRadius: '5px', border: 'none', boxSizing: 'border-box' }}
             required
           />
           <button
@@ -271,7 +458,7 @@ const ChessApp = () => {
   // Game Screen
   if (gameMode === 'playing') {
     return (
-      <div style={{ padding: '20px', maxWidth: '600px', margin: '50px auto', backgroundColor: '#1a1a2e', color: '#eee', borderRadius: '10px' }}>
+      <div style={{ padding: '20px', maxWidth: '700px', margin: '20px auto', backgroundColor: '#1a1a2e', color: '#eee', borderRadius: '10px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}>
           <button
             onClick={() => setGameMode('menu')}
@@ -289,9 +476,10 @@ const ChessApp = () => {
           <h2>VS AI ({difficulty.toUpperCase()})</h2>
         </div>
 
-        <div style={{ marginBottom: '20px', textAlign: 'center' }}>
-          <p>Current Turn: <strong>{currentTurn.toUpperCase()}</strong></p>
+        <div style={{ marginBottom: '20px', textAlign: 'center', backgroundColor: '#252541', padding: '15px', borderRadius: '5px' }}>
+          <p>Current Turn: <strong style={{ color: currentTurn === 'white' ? '#4CAF50' : '#f44336' }}>{currentTurn.toUpperCase()}</strong></p>
           <p>Moves: {moveHistory.length}</p>
+          {aiThinking && <p style={{ color: '#ff8c42' }}>🤖 AI is thinking...</p>}
         </div>
 
         {renderBoard()}
@@ -299,9 +487,11 @@ const ChessApp = () => {
         <div style={{ marginTop: '20px', textAlign: 'center' }}>
           <button
             onClick={() => {
-              setBoard(initializeBoard());
+              setBoard(createInitialBoard());
               setMoveHistory([]);
               setCurrentTurn('white');
+              setSelectedSquare(null);
+              setLegalMoves([]);
             }}
             style={{
               padding: '10px 20px',
@@ -328,6 +518,10 @@ const ChessApp = () => {
           >
             EXIT
           </button>
+        </div>
+
+        <div style={{ marginTop: '20px', backgroundColor: '#252541', padding: '10px', borderRadius: '5px', maxHeight: '100px', overflow: 'auto' }}>
+          <p style={{ fontSize: '12px', color: '#aaa' }}>Moves: {moveHistory.join(' | ')}</p>
         </div>
       </div>
     );
