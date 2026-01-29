@@ -1,13 +1,12 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 
-// Hardcoded backend URL
 const API_BASE_URL = 'https://chess-backend-production-25ad.up.railway.app/api';
 
 const ChessApp = () => {
-  // Authentication
+  // Auth State
   const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [currentPlayer, setCurrentPlayerInfo] = useState(null);
+  const [currentPlayer, setCurrentPlayer] = useState(null);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [email, setEmail] = useState('');
@@ -16,34 +15,45 @@ const ChessApp = () => {
   // Game State
   const [gameMode, setGameMode] = useState('menu');
   const [difficulty, setDifficulty] = useState('medium');
-  const [board, setBoard] = useState(createInitialBoard());
+  const [board, setBoard] = useState(initializeBoard());
   const [selectedSquare, setSelectedSquare] = useState(null);
   const [legalMoves, setLegalMoves] = useState([]);
   const [moveHistory, setMoveHistory] = useState([]);
   const [currentTurn, setCurrentTurn] = useState('white');
   const [gameStatus, setGameStatus] = useState('ongoing');
-  const [gameId, setGameId] = useState(null);
   const [aiThinking, setAiThinking] = useState(false);
 
   const apiClient = axios.create({ baseURL: API_BASE_URL });
 
-  // Initialize chess board
-  function createInitialBoard() {
+  // Initialize board
+  function initializeBoard() {
     const board = Array(8).fill(null).map(() => Array(8).fill(null));
     
-    // Setup pawns
+    // Black pieces
+    board[0][0] = { type: 'rook', color: 'black' };
+    board[0][1] = { type: 'knight', color: 'black' };
+    board[0][2] = { type: 'bishop', color: 'black' };
+    board[0][3] = { type: 'queen', color: 'black' };
+    board[0][4] = { type: 'king', color: 'black' };
+    board[0][5] = { type: 'bishop', color: 'black' };
+    board[0][6] = { type: 'knight', color: 'black' };
+    board[0][7] = { type: 'rook', color: 'black' };
+    
     for (let i = 0; i < 8; i++) {
       board[1][i] = { type: 'pawn', color: 'black' };
       board[6][i] = { type: 'pawn', color: 'white' };
     }
-
-    // Setup back row
-    const backRow = ['rook', 'knight', 'bishop', 'queen', 'king', 'bishop', 'knight', 'rook'];
-    for (let i = 0; i < 8; i++) {
-      board[0][i] = { type: backRow[i], color: 'black' };
-      board[7][i] = { type: backRow[i], color: 'white' };
-    }
-
+    
+    // White pieces
+    board[7][0] = { type: 'rook', color: 'white' };
+    board[7][1] = { type: 'knight', color: 'white' };
+    board[7][2] = { type: 'bishop', color: 'white' };
+    board[7][3] = { type: 'queen', color: 'white' };
+    board[7][4] = { type: 'king', color: 'white' };
+    board[7][5] = { type: 'bishop', color: 'white' };
+    board[7][6] = { type: 'knight', color: 'white' };
+    board[7][7] = { type: 'rook', color: 'white' };
+    
     return board;
   }
 
@@ -54,10 +64,10 @@ const ChessApp = () => {
       white: { pawn: '♙', rook: '♖', knight: '♘', bishop: '♗', queen: '♕', king: '♔' },
       black: { pawn: '♟', rook: '♜', knight: '♞', bishop: '♝', queen: '♛', king: '♚' }
     };
-    return symbols[piece.color][piece.type];
+    return symbols[piece.color]?.[piece.type] || '';
   }
 
-  // Get all possible moves for a piece
+  // Get all possible moves
   function getAllMovesForPiece(boardState, row, col) {
     const piece = boardState[row][col];
     if (!piece) return [];
@@ -69,17 +79,13 @@ const ChessApp = () => {
       const direction = color === 'white' ? -1 : 1;
       const startRow = color === 'white' ? 6 : 1;
 
-      // Forward move
       if (boardState[row + direction]?.[col] === null) {
         moves.push([row + direction, col]);
-
-        // Double move from start
         if (row === startRow && boardState[row + 2 * direction]?.[col] === null) {
           moves.push([row + 2 * direction, col]);
         }
       }
 
-      // Captures
       for (let dc of [-1, 1]) {
         const newRow = row + direction;
         const newCol = col + dc;
@@ -152,14 +158,12 @@ const ChessApp = () => {
 
     const piece = board[row][col];
 
-    // If clicking on own piece, select it
     if (piece && piece.color === 'white') {
       setSelectedSquare([row, col]);
       setLegalMoves(getAllMovesForPiece(board, row, col));
       return;
     }
 
-    // If clicking on a legal move, make the move
     if (selectedSquare) {
       const isLegalMove = legalMoves.some(move => move[0] === row && move[1] === col);
       if (isLegalMove) {
@@ -181,22 +185,21 @@ const ChessApp = () => {
     newBoard[fromRow][fromCol] = null;
 
     setBoard(newBoard);
-    setMoveHistory([...moveHistory, `${String.fromCharCode(97 + fromCol)}${8 - fromRow} → ${String.fromCharCode(97 + toCol)}${8 - toRow}`]);
+    const moveNotation = `${String.fromCharCode(97 + fromCol)}${8 - fromRow} → ${String.fromCharCode(97 + toCol)}${8 - toRow}`;
+    setMoveHistory([...moveHistory, moveNotation]);
     setSelectedSquare(null);
     setLegalMoves([]);
     setCurrentTurn('black');
 
-    // AI makes a move after a short delay
     setTimeout(() => {
       makeAIMove(newBoard);
     }, 1000);
   };
 
-  // AI makes a random move
+  // AI move
   const makeAIMove = (boardState) => {
     setAiThinking(true);
     
-    // Find all possible moves for black pieces
     let allMoves = [];
     for (let r = 0; r < 8; r++) {
       for (let c = 0; c < 8; c++) {
@@ -211,7 +214,6 @@ const ChessApp = () => {
     }
 
     if (allMoves.length > 0) {
-      // Random move
       const randomMove = allMoves[Math.floor(Math.random() * allMoves.length)];
       const newBoard = boardState.map(row => [...row]);
       const piece = newBoard[randomMove.from[0]][randomMove.from[1]];
@@ -220,60 +222,58 @@ const ChessApp = () => {
       newBoard[randomMove.from[0]][randomMove.from[1]] = null;
 
       setBoard(newBoard);
-      setMoveHistory(prev => [...prev, `AI: ${String.fromCharCode(97 + randomMove.from[1])}${8 - randomMove.from[0]} → ${String.fromCharCode(97 + randomMove.to[1])}${8 - randomMove.to[0]}`]);
+      const moveNotation = `AI: ${String.fromCharCode(97 + randomMove.from[1])}${8 - randomMove.from[0]} → ${String.fromCharCode(97 + randomMove.to[1])}${8 - randomMove.to[0]}`;
+      setMoveHistory([...moveHistory, moveNotation]);
       setCurrentTurn('white');
     }
 
     setAiThinking(false);
   };
 
-  // Handle login
+  // Auth handlers
   const handleLogin = async (e) => {
     e.preventDefault();
     try {
       const response = await apiClient.post('/auth/login', { username, password });
       setIsLoggedIn(true);
-      setCurrentPlayerInfo(response.data.user);
-      setGameMode('menu');
+      setCurrentPlayer(response.data.user);
+      setGameMode('home');
       alert('Login successful!');
     } catch (error) {
       alert('Login failed: ' + (error.response?.data?.error || error.message));
     }
   };
 
-  // Handle register
   const handleRegister = async (e) => {
     e.preventDefault();
     try {
       const response = await apiClient.post('/auth/register', { username, email, password });
       setIsLoggedIn(true);
-      setCurrentPlayerInfo(response.data.user);
-      setGameMode('menu');
+      setCurrentPlayer(response.data.user);
+      setGameMode('home');
       alert('Registration successful!');
     } catch (error) {
       alert('Registration failed: ' + (error.response?.data?.error || error.message));
     }
   };
 
-  // Handle logout
   const handleLogout = () => {
     setIsLoggedIn(false);
-    setCurrentPlayerInfo(null);
+    setCurrentPlayer(null);
     setUsername('');
     setPassword('');
     setEmail('');
     setGameMode('menu');
   };
 
-  // Start new game
+  // Start game
   const startNewGame = async () => {
     try {
-      const response = await apiClient.post('/games', {
+      await apiClient.post('/games', {
         player_id: currentPlayer.id,
         difficulty: difficulty
       });
-      setGameId(response.data.game.id);
-      setBoard(createInitialBoard());
+      setBoard(initializeBoard());
       setMoveHistory([]);
       setCurrentTurn('white');
       setGameStatus('ongoing');
@@ -285,34 +285,49 @@ const ChessApp = () => {
     }
   };
 
-  // Render chess board
+  // Render board
   const renderBoard = () => {
+    const boardSize = 50;
     return (
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(8, 50px)', gap: '1px', backgroundColor: '#333', padding: '5px', margin: '20px auto' }}>
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: `repeat(8, ${boardSize}px)`,
+        gap: '0',
+        backgroundColor: '#333',
+        marginTop: '20px'
+      }}>
         {board.map((row, r) =>
           row.map((piece, c) => {
             const isSelected = selectedSquare && selectedSquare[0] === r && selectedSquare[1] === c;
-            const isLegal = legalMoves.some(move => move[0] === r && move[1] === c);
+            const isLegal = legalMoves.some(m => m[0] === r && m[1] === c);
             const isLight = (r + c) % 2 === 0;
             
             return (
               <div
                 key={`${r}-${c}`}
+                onClick={() => handleSquareClick(r, c)}
                 style={{
-                  width: '50px',
-                  height: '50px',
-                  backgroundColor: isSelected ? '#ff6b6b' : isLegal ? '#4CAF50' : isLight ? '#ddd' : '#888',
+                  width: `${boardSize}px`,
+                  height: `${boardSize}px`,
+                  backgroundColor: isSelected ? '#e74c3c' : isLegal ? '#2ecc71' : isLight ? '#f0d9b5' : '#b58863',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   fontSize: '32px',
                   cursor: 'pointer',
-                  border: isSelected ? '3px solid red' : 'none',
-                  userSelect: 'none'
+                  position: 'relative'
                 }}
-                onClick={() => handleSquareClick(r, c)}
               >
-                {getPieceSymbol(piece)}
+                {piece && getPieceSymbol(piece)}
+                {isLegal && (
+                  <div style={{
+                    position: 'absolute',
+                    width: '10px',
+                    height: '10px',
+                    backgroundColor: '#2ecc71',
+                    borderRadius: '50%'
+                  }} />
+                )}
               </div>
             );
           })
@@ -321,18 +336,34 @@ const ChessApp = () => {
     );
   };
 
-  // Login/Register Screen
+  // LOGIN SCREEN
   if (!isLoggedIn) {
     return (
-      <div style={{ padding: '20px', maxWidth: '400px', margin: '50px auto', backgroundColor: '#1a1a2e', color: '#eee', borderRadius: '10px' }}>
-        <h1 style={{ textAlign: 'center', marginBottom: '30px' }}>♔ CHESS AI ♔</h1>
+      <div style={{
+        padding: '40px 20px',
+        maxWidth: '400px',
+        margin: '50px auto',
+        backgroundColor: '#1a1a2e',
+        color: '#eee',
+        borderRadius: '15px'
+      }}>
+        <h1 style={{ textAlign: 'center', marginBottom: '30px', fontSize: '32px' }}>♔ CHESS MASTER ♔</h1>
         <form onSubmit={isRegistering ? handleRegister : handleLogin}>
           <input
             type="text"
             placeholder="Username"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
-            style={{ width: '100%', padding: '10px', marginBottom: '10px', borderRadius: '5px', border: 'none', boxSizing: 'border-box' }}
+            style={{
+              width: '100%',
+              padding: '12px',
+              marginBottom: '10px',
+              borderRadius: '8px',
+              border: 'none',
+              boxSizing: 'border-box',
+              backgroundColor: '#252541',
+              color: '#eee'
+            }}
             required
           />
           {isRegistering && (
@@ -341,7 +372,16 @@ const ChessApp = () => {
               placeholder="Email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              style={{ width: '100%', padding: '10px', marginBottom: '10px', borderRadius: '5px', border: 'none', boxSizing: 'border-box' }}
+              style={{
+                width: '100%',
+                padding: '12px',
+                marginBottom: '10px',
+                borderRadius: '8px',
+                border: 'none',
+                boxSizing: 'border-box',
+                backgroundColor: '#252541',
+                color: '#eee'
+              }}
               required
             />
           )}
@@ -350,35 +390,45 @@ const ChessApp = () => {
             placeholder="Password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            style={{ width: '100%', padding: '10px', marginBottom: '10px', borderRadius: '5px', border: 'none', boxSizing: 'border-box' }}
+            style={{
+              width: '100%',
+              padding: '12px',
+              marginBottom: '15px',
+              borderRadius: '8px',
+              border: 'none',
+              boxSizing: 'border-box',
+              backgroundColor: '#252541',
+              color: '#eee'
+            }}
             required
           />
           <button
             type="submit"
             style={{
               width: '100%',
-              padding: '10px',
-              backgroundColor: '#ff8c42',
+              padding: '12px',
+              backgroundColor: '#f39c12',
               color: 'white',
               border: 'none',
-              borderRadius: '5px',
+              borderRadius: '8px',
               cursor: 'pointer',
               marginBottom: '10px',
-              fontSize: '16px'
+              fontSize: '16px',
+              fontWeight: 'bold'
             }}
           >
-            {isRegistering ? 'Register' : 'Login'}
+            {isRegistering ? 'REGISTER' : 'LOGIN'}
           </button>
         </form>
         <button
           onClick={() => setIsRegistering(!isRegistering)}
           style={{
             width: '100%',
-            padding: '10px',
-            backgroundColor: '#666',
+            padding: '12px',
+            backgroundColor: '#555',
             color: 'white',
             border: 'none',
-            borderRadius: '5px',
+            borderRadius: '8px',
             cursor: 'pointer'
           }}
         >
@@ -388,140 +438,310 @@ const ChessApp = () => {
     );
   }
 
-  // Main Menu
+  // HOME SCREEN (Menu)
+  if (gameMode === 'home') {
+    return (
+      <div style={{
+        minHeight: '100vh',
+        backgroundColor: '#0a0a0a',
+        padding: '60px 20px',
+        backgroundImage: 'linear-gradient(135deg, #1a1a2e 0%, #0a0a0a 100%)'
+      }}>
+        <div style={{ maxWidth: '800px', margin: '0 auto' }}>
+          <h1 style={{
+            textAlign: 'center',
+            fontSize: '48px',
+            marginBottom: '15px',
+            color: '#fff'
+          }}>
+            ♔ Chess Master ♔
+          </h1>
+          <p style={{
+            textAlign: 'center',
+            fontSize: '18px',
+            color: '#bbb',
+            marginBottom: '60px'
+          }}>
+            Challenge your mind against an AI opponent or sharpen your skills in training mode
+          </p>
+
+          {/* Play vs AI */}
+          <div
+            onClick={() => setGameMode('menu')}
+            style={{
+              backgroundColor: '#1a1a2e',
+              border: '1px solid #333',
+              padding: '20px',
+              borderRadius: '10px',
+              marginBottom: '15px',
+              cursor: 'pointer',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              transition: 'all 0.3s'
+            }}
+            onMouseOver={(e) => e.target.style.backgroundColor = '#252541'}
+            onMouseOut={(e) => e.target.style.backgroundColor = '#1a1a2e'}
+          >
+            <div>
+              <div style={{ fontSize: '24px', marginBottom: '8px' }}>⚔️ Play vs AI</div>
+              <div style={{ fontSize: '14px', color: '#999' }}>Challenge the AI at three difficulty levels</div>
+            </div>
+            <div style={{ fontSize: '24px', color: '#f39c12' }}>›</div>
+          </div>
+
+          {/* Training Mode */}
+          <div
+            style={{
+              backgroundColor: '#1a1a2e',
+              border: '1px solid #333',
+              padding: '20px',
+              borderRadius: '10px',
+              marginBottom: '15px',
+              cursor: 'pointer',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              transition: 'all 0.3s',
+              opacity: 0.6
+            }}
+          >
+            <div>
+              <div style={{ fontSize: '24px', marginBottom: '8px' }}>📚 Training Mode</div>
+              <div style={{ fontSize: '14px', color: '#999' }}>Learn moves, tactics, and strategies</div>
+            </div>
+            <div style={{ fontSize: '24px', color: '#f39c12' }}>›</div>
+          </div>
+
+          {/* Saved Games */}
+          <div
+            style={{
+              backgroundColor: '#1a1a2e',
+              border: '1px solid #333',
+              padding: '20px',
+              borderRadius: '10px',
+              marginBottom: '30px',
+              cursor: 'pointer',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              transition: 'all 0.3s',
+              opacity: 0.6
+            }}
+          >
+            <div>
+              <div style={{ fontSize: '24px', marginBottom: '8px' }}>💾 Saved Games</div>
+              <div style={{ fontSize: '14px', color: '#999' }}>Continue your previous games</div>
+            </div>
+            <div style={{ fontSize: '24px', color: '#f39c12' }}>›</div>
+          </div>
+
+          {/* Logout */}
+          <button
+            onClick={handleLogout}
+            style={{
+              width: '100%',
+              padding: '12px',
+              backgroundColor: '#e74c3c',
+              color: 'white',
+              border: 'none',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              fontSize: '16px',
+              fontWeight: 'bold'
+            }}
+          >
+            LOGOUT
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // DIFFICULTY SELECT
   if (gameMode === 'menu') {
     return (
-      <div style={{ padding: '20px', maxWidth: '600px', margin: '50px auto', backgroundColor: '#1a1a2e', color: '#eee', borderRadius: '10px' }}>
-        <div style={{ textAlign: 'center', marginBottom: '30px' }}>
-          <h1>♔ CHESS AI ♔</h1>
-          <p>Welcome, {currentPlayer?.username}!</p>
-        </div>
+      <div style={{
+        padding: '40px 20px',
+        maxWidth: '600px',
+        margin: '50px auto',
+        backgroundColor: '#1a1a2e',
+        color: '#eee',
+        borderRadius: '15px'
+      }}>
+        <h2 style={{ textAlign: 'center', marginBottom: '30px' }}>Select Difficulty</h2>
 
-        <div style={{ marginBottom: '20px' }}>
-          <h2>Select Difficulty:</h2>
-          {['easy', 'medium', 'hard'].map(level => (
-            <button
-              key={level}
-              onClick={() => setDifficulty(level)}
-              style={{
-                marginRight: '10px',
-                padding: '10px 20px',
-                backgroundColor: difficulty === level ? '#ff8c42' : '#666',
-                color: 'white',
-                border: 'none',
-                borderRadius: '5px',
-                cursor: 'pointer',
-                marginBottom: '10px'
-              }}
-            >
-              {level.toUpperCase()}
-            </button>
-          ))}
-        </div>
+        {['easy', 'medium', 'hard'].map(level => (
+          <button
+            key={level}
+            onClick={() => {
+              setDifficulty(level);
+              startNewGame();
+            }}
+            style={{
+              width: '100%',
+              padding: '15px',
+              backgroundColor: '#f39c12',
+              color: 'white',
+              border: 'none',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              marginBottom: '10px',
+              fontSize: '16px',
+              fontWeight: 'bold'
+            }}
+          >
+            {level.toUpperCase()}
+          </button>
+        ))}
 
         <button
-          onClick={startNewGame}
+          onClick={() => setGameMode('home')}
           style={{
             width: '100%',
             padding: '15px',
-            backgroundColor: '#4CAF50',
+            backgroundColor: '#555',
             color: 'white',
             border: 'none',
-            borderRadius: '5px',
+            borderRadius: '8px',
             cursor: 'pointer',
-            marginBottom: '10px',
-            fontSize: '16px',
-            fontWeight: 'bold'
+            fontSize: '16px'
           }}
         >
-          ▶ NEW GAME
-        </button>
-
-        <button
-          onClick={handleLogout}
-          style={{
-            width: '100%',
-            padding: '10px',
-            backgroundColor: '#f44336',
-            color: 'white',
-            border: 'none',
-            borderRadius: '5px',
-            cursor: 'pointer'
-          }}
-        >
-          LOGOUT
+          BACK
         </button>
       </div>
     );
   }
 
-  // Game Screen
+  // GAME SCREEN
   if (gameMode === 'playing') {
     return (
-      <div style={{ padding: '20px', maxWidth: '700px', margin: '20px auto', backgroundColor: '#1a1a2e', color: '#eee', borderRadius: '10px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}>
-          <button
-            onClick={() => setGameMode('menu')}
-            style={{
-              padding: '10px 20px',
-              backgroundColor: '#666',
-              color: 'white',
-              border: 'none',
-              borderRadius: '5px',
-              cursor: 'pointer'
-            }}
-          >
-            ← MENU
-          </button>
-          <h2>VS AI ({difficulty.toUpperCase()})</h2>
-        </div>
+      <div style={{
+        padding: '20px',
+        backgroundColor: '#0a0a0a',
+        minHeight: '100vh',
+        display: 'flex',
+        justifyContent: 'center'
+      }}>
+        <div style={{ display: 'flex', gap: '30px', maxWidth: '1200px' }}>
+          {/* Chessboard */}
+          <div>
+            <div style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: '15px'
+            }}>
+              <button
+                onClick={() => setGameMode('home')}
+                style={{
+                  padding: '10px 20px',
+                  backgroundColor: '#555',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: 'pointer'
+                }}
+              >
+                ← HOME
+              </button>
+              <h2>VS AI ({difficulty.toUpperCase()})</h2>
+            </div>
 
-        <div style={{ marginBottom: '20px', textAlign: 'center', backgroundColor: '#252541', padding: '15px', borderRadius: '5px' }}>
-          <p>Current Turn: <strong style={{ color: currentTurn === 'white' ? '#4CAF50' : '#f44336' }}>{currentTurn.toUpperCase()}</strong></p>
-          <p>Moves: {moveHistory.length}</p>
-          {aiThinking && <p style={{ color: '#ff8c42' }}>🤖 AI is thinking...</p>}
-        </div>
+            <div style={{
+              textAlign: 'center',
+              marginBottom: '15px',
+              backgroundColor: '#1a1a2e',
+              padding: '15px',
+              borderRadius: '8px'
+            }}>
+              <p style={{ marginBottom: '5px' }}>
+                Current Turn: <strong style={{ color: currentTurn === 'white' ? '#2ecc71' : '#e74c3c' }}>
+                  {currentTurn === 'white' ? '♔ WHITE' : '♚ BLACK'}
+                </strong>
+              </p>
+              <p>Moves: {moveHistory.length}</p>
+              {aiThinking && <p style={{ color: '#f39c12' }}>🤖 AI is thinking...</p>}
+            </div>
 
-        {renderBoard()}
+            {renderBoard()}
 
-        <div style={{ marginTop: '20px', textAlign: 'center' }}>
-          <button
-            onClick={() => {
-              setBoard(createInitialBoard());
-              setMoveHistory([]);
-              setCurrentTurn('white');
-              setSelectedSquare(null);
-              setLegalMoves([]);
-            }}
-            style={{
-              padding: '10px 20px',
-              backgroundColor: '#ff8c42',
-              color: 'white',
-              border: 'none',
-              borderRadius: '5px',
-              cursor: 'pointer',
-              marginRight: '10px'
-            }}
-          >
-            ↻ NEW GAME
-          </button>
-          <button
-            onClick={() => setGameMode('menu')}
-            style={{
-              padding: '10px 20px',
-              backgroundColor: '#f44336',
-              color: 'white',
-              border: 'none',
-              borderRadius: '5px',
-              cursor: 'pointer'
-            }}
-          >
-            EXIT
-          </button>
-        </div>
+            <div style={{ marginTop: '15px', textAlign: 'center' }}>
+              <button
+                onClick={() => {
+                  setBoard(initializeBoard());
+                  setMoveHistory([]);
+                  setCurrentTurn('white');
+                  setGameStatus('ongoing');
+                  setSelectedSquare(null);
+                  setLegalMoves([]);
+                }}
+                style={{
+                  padding: '10px 20px',
+                  backgroundColor: '#f39c12',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  marginRight: '10px'
+                }}
+              >
+                ↻ NEW GAME
+              </button>
+              <button
+                onClick={() => setGameMode('home')}
+                style={{
+                  padding: '10px 20px',
+                  backgroundColor: '#e74c3c',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: 'pointer'
+                }}
+              >
+                EXIT
+              </button>
+            </div>
+          </div>
 
-        <div style={{ marginTop: '20px', backgroundColor: '#252541', padding: '10px', borderRadius: '5px', maxHeight: '100px', overflow: 'auto' }}>
-          <p style={{ fontSize: '12px', color: '#aaa' }}>Moves: {moveHistory.join(' | ')}</p>
+          {/* Move History - Vertical */}
+          <div style={{
+            backgroundColor: '#1a1a2e',
+            padding: '20px',
+            borderRadius: '8px',
+            width: '250px',
+            height: 'fit-content'
+          }}>
+            <h3 style={{ marginTop: 0, marginBottom: '15px', color: '#f39c12' }}>Move History</h3>
+            <div style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '8px',
+              maxHeight: '600px',
+              overflowY: 'auto'
+            }}>
+              {moveHistory.length > 0 ? (
+                moveHistory.map((move, i) => (
+                  <div
+                    key={i}
+                    style={{
+                      padding: '8px 12px',
+                      backgroundColor: '#252541',
+                      borderRadius: '6px',
+                      fontSize: '13px',
+                      color: '#ddd',
+                      borderLeft: `3px solid ${i % 2 === 0 ? '#2ecc71' : '#e74c3c'}`
+                    }}
+                  >
+                    <span style={{ color: '#f39c12', fontWeight: 'bold' }}>{i + 1}.</span> {move}
+                  </div>
+                ))
+              ) : (
+                <p style={{ color: '#999', fontSize: '12px' }}>No moves yet</p>
+              )}
+            </div>
+          </div>
         </div>
       </div>
     );
