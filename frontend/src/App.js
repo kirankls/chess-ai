@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 
 const API_BASE_URL = 'https://chess-backend-production-25ad.up.railway.app/api';
@@ -12,7 +12,9 @@ const ChessApp = () => {
   const [isRegistering, setIsRegistering] = useState(false);
 
   const [gameMode, setGameMode] = useState('menu');
+  const [screenMode, setScreenMode] = useState('home'); // home, menu, playing, training, saved-games
   const [difficulty, setDifficulty] = useState('medium');
+  const [trainingTopic, setTrainingTopic] = useState(null);
   const [board, setBoard] = useState(initializeBoard());
   const [selectedSquare, setSelectedSquare] = useState(null);
   const [legalMoves, setLegalMoves] = useState([]);
@@ -23,10 +25,12 @@ const ChessApp = () => {
   const [aiThinking, setAiThinking] = useState(false);
   const [promotionDialog, setPromotionDialog] = useState(null);
   const [capturedPieces, setCapturedPieces] = useState({ white: [], black: [] });
+  const [savedGames, setSavedGames] = useState([]);
+  const [gameId, setGameId] = useState(Date.now());
 
   const apiClient = axios.create({ baseURL: API_BASE_URL });
 
-  // Simplified piece square tables
+  // Piece square tables
   const pawnTable = [
     [0, 0, 0, 0, 0, 0, 0, 0],
     [50, 50, 50, 50, 50, 50, 50, 50],
@@ -71,6 +75,70 @@ const ChessApp = () => {
     [0, 0, 0, 5, 5, 0, 0, 0]
   ];
 
+  // Training lessons
+  const trainingLessons = {
+    'piece-movements': {
+      title: 'Piece Movements',
+      description: 'Learn how each piece moves on the board',
+      tips: [
+        '♟ Pawn: Moves forward 1 square (2 squares on first move)',
+        '♞ Knight: Moves in L-shape (2+1 squares)',
+        '♝ Bishop: Moves diagonally any distance',
+        '♖ Rook: Moves horizontally/vertically any distance',
+        '♕ Queen: Combines bishop and rook movements',
+        '♔ King: Moves 1 square in any direction'
+      ]
+    },
+    'opening-principles': {
+      title: 'Opening Principles',
+      description: 'Essential strategies for starting the game',
+      tips: [
+        '1. Control the center with pawns (d4, d5, e4, e5)',
+        '2. Develop pieces early (knights before bishops)',
+        '3. Castle early to protect your king',
+        '4. Move each piece only once in opening',
+        '5. Do not bring your queen out too early',
+        '6. Connect your rooks by moving pieces out'
+      ]
+    },
+    'tactical-basics': {
+      title: 'Tactical Basics',
+      description: 'Common tactics to win material',
+      tips: [
+        '🎯 Fork: Attack two pieces at once',
+        '🎯 Pin: Attack a piece that cannot move',
+        '🎯 Skewer: Attack valuable piece to win lesser one',
+        '🎯 Discovered Attack: Move piece to reveal attack',
+        '🎯 Double Attack: Attack two targets simultaneously',
+        '🎯 Remove Defender: Capture piece defending something'
+      ]
+    },
+    'endgame-basics': {
+      title: 'Endgame Basics',
+      description: 'How to finish the game with few pieces',
+      tips: [
+        '1. Activate your king (bring it to center)',
+        '2. Passed pawns are very powerful',
+        '3. Rook should be behind passed pawn',
+        '4. Opposite colored bishops = usually draw',
+        '5. Triangulation is key in pawn endgames',
+        '6. Push passed pawns forward aggressively'
+      ]
+    },
+    'chess-etiquette': {
+      title: 'Chess Etiquette',
+      description: 'Proper conduct and fair play',
+      tips: [
+        '✓ Say "check" when attacking the king',
+        '✓ Touch-move rule: You must move touched piece',
+        '✓ Resign when position is hopeless',
+        '✓ Offer handshake before/after game',
+        '✓ Do not distract opponent during game',
+        '✓ Learn from losses, celebrate wins humbly'
+      ]
+    }
+  };
+
   // Initialize board
   function initializeBoard() {
     const board = Array(8).fill(null).map(() => Array(8).fill(null));
@@ -101,7 +169,61 @@ const ChessApp = () => {
     return board;
   }
 
-  // Get piece symbol for captured pieces display
+  // Save game to localStorage
+  function saveGame() {
+    const gameData = {
+      id: gameId,
+      timestamp: new Date().toLocaleString(),
+      difficulty: difficulty,
+      board: board,
+      moveHistory: moveHistory,
+      currentTurn: currentTurn,
+      capturedPieces: capturedPieces,
+      gameStatus: gameStatus
+    };
+    
+    const games = JSON.parse(localStorage.getItem('savedGames') || '[]');
+    const existingIndex = games.findIndex(g => g.id === gameId);
+    
+    if (existingIndex >= 0) {
+      games[existingIndex] = gameData;
+    } else {
+      games.push(gameData);
+    }
+    
+    localStorage.setItem('savedGames', JSON.stringify(games));
+    alert('Game saved successfully!');
+  }
+
+  // Load saved games
+  function loadSavedGames() {
+    const games = JSON.parse(localStorage.getItem('savedGames') || '[]');
+    setSavedGames(games);
+    setScreenMode('saved-games');
+  }
+
+  // Resume game
+  function resumeGame(gameData) {
+    setBoard(gameData.board);
+    setMoveHistory(gameData.moveHistory);
+    setCurrentTurn(gameData.currentTurn);
+    setCapturedPieces(gameData.capturedPieces);
+    setGameStatus(gameData.gameStatus);
+    setDifficulty(gameData.difficulty);
+    setGameId(gameData.id);
+    setGameMode('playing');
+    setScreenMode('playing');
+  }
+
+  // Delete saved game
+  function deleteSavedGame(id) {
+    const games = JSON.parse(localStorage.getItem('savedGames') || '[]');
+    const filtered = games.filter(g => g.id !== id);
+    localStorage.setItem('savedGames', JSON.stringify(filtered));
+    setSavedGames(filtered);
+  }
+
+  // Get piece symbol
   function getPieceSymbol(type, color) {
     const symbols = {
       pawn: color === 'white' ? '♙' : '♟',
@@ -257,7 +379,7 @@ const ChessApp = () => {
     return legalMoves;
   }
 
-  // Fast checkmate check
+  // Checkmate check
   function isCheckmate(boardState, color) {
     if (!isKingInCheck(boardState, color)) return false;
 
@@ -272,7 +394,7 @@ const ChessApp = () => {
     return true;
   }
 
-  // Fast stalemate check
+  // Stalemate check
   function isStalemate(boardState, color) {
     if (isKingInCheck(boardState, color)) return false;
 
@@ -297,7 +419,7 @@ const ChessApp = () => {
     return newBoard;
   }
 
-  // Fast position evaluation
+  // Position evaluation
   function evaluatePosition(boardState, color) {
     let score = 0;
     const pieceValues = { pawn: 100, knight: 320, bishop: 330, rook: 500, queen: 900, king: 0 };
@@ -327,7 +449,7 @@ const ChessApp = () => {
     return score;
   }
 
-  // Score moves for ordering
+  // Score moves
   function scoreMoveForOrdering(boardState, fromR, fromC, toR, toC) {
     let score = 0;
     const piece = boardState[fromR][fromC];
@@ -348,7 +470,7 @@ const ChessApp = () => {
     return score;
   }
 
-  // Optimized minimax
+  // Minimax
   function minimax(boardState, depth, alpha, beta, isMaximizing, maxDepth) {
     if (depth === maxDepth) {
       return evaluatePosition(boardState, 'black');
@@ -500,12 +622,16 @@ const ChessApp = () => {
 
     if (piece && piece.color === 'white') {
       setSelectedSquare([row, col]);
-      setLegalMoves(getLegalMoves(board, row, col));
+      // In hard mode, don't show legal moves
+      if (difficulty !== 'hard') {
+        setLegalMoves(getLegalMoves(board, row, col));
+      }
       return;
     }
 
     if (selectedSquare) {
-      const isLegalMove = legalMoves.some(move => move[0] === row && move[1] === col);
+      const legalMovesForSelected = getLegalMoves(board, selectedSquare[0], selectedSquare[1]);
+      const isLegalMove = legalMovesForSelected.some(move => move[0] === row && move[1] === col);
       if (isLegalMove) {
         makeMove(selectedSquare[0], selectedSquare[1], row, col);
         return;
@@ -522,7 +648,6 @@ const ChessApp = () => {
     const piece = newBoard[fromRow][fromCol];
     const capturedPiece = newBoard[toRow][toCol];
     
-    // Track captured piece
     if (capturedPiece) {
       setCapturedPieces(prev => ({
         ...prev,
@@ -580,7 +705,6 @@ const ChessApp = () => {
         const piece = newBoard[bestMove.from[0]][bestMove.from[1]];
         const capturedPiece = newBoard[bestMove.to[0]][bestMove.to[1]];
         
-        // Track captured piece
         if (capturedPiece) {
           setCapturedPieces(prev => ({
             ...prev,
@@ -626,7 +750,7 @@ const ChessApp = () => {
       const response = await apiClient.post('/auth/login', { username, password });
       setIsLoggedIn(true);
       setCurrentPlayer(response.data.user);
-      setGameMode('home');
+      setScreenMode('home');
       alert('Login successful!');
     } catch (error) {
       alert('Login failed: ' + (error.response?.data?.error || error.message));
@@ -639,7 +763,7 @@ const ChessApp = () => {
       const response = await apiClient.post('/auth/register', { username, email, password });
       setIsLoggedIn(true);
       setCurrentPlayer(response.data.user);
-      setGameMode('home');
+      setScreenMode('home');
       alert('Registration successful!');
     } catch (error) {
       alert('Registration failed: ' + (error.response?.data?.error || error.message));
@@ -652,61 +776,7 @@ const ChessApp = () => {
     setUsername('');
     setPassword('');
     setEmail('');
-    setGameMode('menu');
-  };
-
-  // Render board
-  const renderBoard = () => {
-    const squareSize = 90;
-    return (
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: `repeat(8, ${squareSize}px)`,
-        gap: '0',
-        backgroundColor: '#333',
-        marginTop: '20px',
-        border: '4px solid #333'
-      }}>
-        {board.map((row, r) =>
-          row.map((piece, c) => {
-            const isSelected = selectedSquare && selectedSquare[0] === r && selectedSquare[1] === c;
-            const isLegal = legalMoves.some(m => m[0] === r && m[1] === c);
-            const isLight = (r + c) % 2 === 0;
-            
-            return (
-              <div
-                key={`${r}-${c}`}
-                onClick={() => handleSquareClick(r, c)}
-                style={{
-                  width: `${squareSize}px`,
-                  height: `${squareSize}px`,
-                  backgroundColor: isSelected ? '#e74c3c' : isLegal ? '#2ecc71' : isLight ? '#f0d9b5' : '#b58863',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  cursor: aiThinking || currentTurn !== 'white' ? 'not-allowed' : 'pointer',
-                  position: 'relative',
-                  border: '1px solid rgba(0,0,0,0.1)'
-                }}
-              >
-                {piece && renderPiece(piece)}
-                {isLegal && (
-                  <div style={{
-                    position: 'absolute',
-                    width: '20px',
-                    height: '20px',
-                    backgroundColor: '#2ecc71',
-                    borderRadius: '50%',
-                    opacity: 0.8,
-                    border: '2px solid #1abc9c'
-                  }} />
-                )}
-              </div>
-            );
-          })
-        )}
-      </div>
-    );
+    setScreenMode('home');
   };
 
   // Render captured pieces
@@ -760,6 +830,60 @@ const ChessApp = () => {
             <span style={{ fontSize: '12px', color: '#666' }}>No captures yet</span>
           )}
         </div>
+      </div>
+    );
+  };
+
+  // Render board
+  const renderBoard = () => {
+    const squareSize = 90;
+    return (
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: `repeat(8, ${squareSize}px)`,
+        gap: '0',
+        backgroundColor: '#333',
+        marginTop: '20px',
+        border: '4px solid #333'
+      }}>
+        {board.map((row, r) =>
+          row.map((piece, c) => {
+            const isSelected = selectedSquare && selectedSquare[0] === r && selectedSquare[1] === c;
+            const isLegal = legalMoves.some(m => m[0] === r && m[1] === c);
+            const isLight = (r + c) % 2 === 0;
+            
+            return (
+              <div
+                key={`${r}-${c}`}
+                onClick={() => handleSquareClick(r, c)}
+                style={{
+                  width: `${squareSize}px`,
+                  height: `${squareSize}px`,
+                  backgroundColor: isSelected ? '#e74c3c' : isLegal ? '#2ecc71' : isLight ? '#f0d9b5' : '#b58863',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: aiThinking || currentTurn !== 'white' ? 'not-allowed' : 'pointer',
+                  position: 'relative',
+                  border: '1px solid rgba(0,0,0,0.1)'
+                }}
+              >
+                {piece && renderPiece(piece)}
+                {isLegal && (
+                  <div style={{
+                    position: 'absolute',
+                    width: '20px',
+                    height: '20px',
+                    backgroundColor: '#2ecc71',
+                    borderRadius: '50%',
+                    opacity: 0.8,
+                    border: '2px solid #1abc9c'
+                  }} />
+                )}
+              </div>
+            );
+          })
+        )}
       </div>
     );
   };
@@ -927,7 +1051,7 @@ const ChessApp = () => {
   }
 
   // HOME
-  if (gameMode === 'home') {
+  if (screenMode === 'home') {
     return (
       <div style={{
         minHeight: '100vh',
@@ -935,16 +1059,17 @@ const ChessApp = () => {
         padding: '60px 20px',
         backgroundImage: 'linear-gradient(135deg, #1a1a2e 0%, #0a0a0a 100%)'
       }}>
-        <div style={{ maxWidth: '800px', margin: '0 auto' }}>
+        <div style={{ maxWidth: '900px', margin: '0 auto' }}>
           <h1 style={{ textAlign: 'center', fontSize: '48px', marginBottom: '15px', color: '#fff' }}>
             ♔ Chess Master ♔
           </h1>
           <p style={{ textAlign: 'center', fontSize: '18px', color: '#bbb', marginBottom: '60px' }}>
-            Challenge your mind against an intelligent AI opponent
+            Learn, play, and master chess!
           </p>
 
+          {/* Play vs AI */}
           <div
-            onClick={() => setGameMode('menu')}
+            onClick={() => setScreenMode('menu')}
             style={{
               backgroundColor: '#1a1a2e',
               border: '1px solid #333',
@@ -959,7 +1084,51 @@ const ChessApp = () => {
           >
             <div>
               <div style={{ fontSize: '24px', marginBottom: '8px' }}>⚔️ Play vs AI</div>
-              <div style={{ fontSize: '14px', color: '#999' }}>Three difficulty levels - Fast gameplay</div>
+              <div style={{ fontSize: '14px', color: '#999' }}>Challenge the AI - Easy, Medium, Hard</div>
+            </div>
+            <div style={{ fontSize: '24px', color: '#f39c12' }}>›</div>
+          </div>
+
+          {/* Training Mode */}
+          <div
+            onClick={() => setScreenMode('training')}
+            style={{
+              backgroundColor: '#1a1a2e',
+              border: '1px solid #333',
+              padding: '20px',
+              borderRadius: '10px',
+              marginBottom: '15px',
+              cursor: 'pointer',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center'
+            }}
+          >
+            <div>
+              <div style={{ fontSize: '24px', marginBottom: '8px' }}>📚 Training Mode</div>
+              <div style={{ fontSize: '14px', color: '#999' }}>Learn piece movements, tactics, and strategy</div>
+            </div>
+            <div style={{ fontSize: '24px', color: '#f39c12' }}>›</div>
+          </div>
+
+          {/* Saved Games */}
+          <div
+            onClick={loadSavedGames}
+            style={{
+              backgroundColor: '#1a1a2e',
+              border: '1px solid #333',
+              padding: '20px',
+              borderRadius: '10px',
+              marginBottom: '30px',
+              cursor: 'pointer',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center'
+            }}
+          >
+            <div>
+              <div style={{ fontSize: '24px', marginBottom: '8px' }}>💾 Saved Games</div>
+              <div style={{ fontSize: '14px', color: '#999' }}>Resume games in progress</div>
             </div>
             <div style={{ fontSize: '24px', color: '#f39c12' }}>›</div>
           </div>
@@ -975,8 +1144,7 @@ const ChessApp = () => {
               borderRadius: '8px',
               cursor: 'pointer',
               fontSize: '16px',
-              fontWeight: 'bold',
-              marginTop: '40px'
+              fontWeight: 'bold'
             }}
           >
             LOGOUT
@@ -986,8 +1154,222 @@ const ChessApp = () => {
     );
   }
 
-  // DIFFICULTY
-  if (gameMode === 'menu') {
+  // TRAINING MODE
+  if (screenMode === 'training') {
+    return (
+      <div style={{
+        padding: '40px 20px',
+        maxWidth: '800px',
+        margin: '0 auto',
+        backgroundColor: '#0a0a0a',
+        minHeight: '100vh',
+        color: '#eee'
+      }}>
+        {trainingTopic ? (
+          <>
+            <button
+              onClick={() => setTrainingTopic(null)}
+              style={{
+                padding: '10px 20px',
+                backgroundColor: '#555',
+                color: 'white',
+                border: 'none',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                marginBottom: '30px'
+              }}
+            >
+              ← BACK
+            </button>
+
+            <div style={{ backgroundColor: '#1a1a2e', padding: '30px', borderRadius: '10px' }}>
+              <h2 style={{ color: '#f39c12', marginTop: 0 }}>{trainingLessons[trainingTopic].title}</h2>
+              <p style={{ color: '#999', marginBottom: '30px' }}>{trainingLessons[trainingTopic].description}</p>
+
+              <div style={{ backgroundColor: '#252541', padding: '20px', borderRadius: '8px' }}>
+                {trainingLessons[trainingTopic].tips.map((tip, i) => (
+                  <div key={i} style={{ marginBottom: '15px', fontSize: '16px', lineHeight: '1.6' }}>
+                    {tip}
+                  </div>
+                ))}
+              </div>
+
+              <button
+                onClick={() => setScreenMode('home')}
+                style={{
+                  width: '100%',
+                  padding: '12px',
+                  backgroundColor: '#f39c12',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  marginTop: '30px',
+                  fontSize: '16px',
+                  fontWeight: 'bold'
+                }}
+              >
+                BACK TO HOME
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <button
+              onClick={() => setScreenMode('home')}
+              style={{
+                padding: '10px 20px',
+                backgroundColor: '#555',
+                color: 'white',
+                border: 'none',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                marginBottom: '30px'
+              }}
+            >
+              ← BACK
+            </button>
+
+            <h1 style={{ textAlign: 'center', marginBottom: '40px', color: '#f39c12' }}>📚 Training Mode</h1>
+
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
+              gap: '20px'
+            }}>
+              {Object.entries(trainingLessons).map(([key, lesson]) => (
+                <div
+                  key={key}
+                  onClick={() => setTrainingTopic(key)}
+                  style={{
+                    backgroundColor: '#1a1a2e',
+                    border: '1px solid #333',
+                    padding: '20px',
+                    borderRadius: '10px',
+                    cursor: 'pointer',
+                    transition: 'all 0.3s'
+                  }}
+                  onMouseOver={(e) => {
+                    e.currentTarget.style.borderColor = '#f39c12';
+                    e.currentTarget.style.transform = 'translateY(-5px)';
+                  }}
+                  onMouseOut={(e) => {
+                    e.currentTarget.style.borderColor = '#333';
+                    e.currentTarget.style.transform = 'translateY(0)';
+                  }}
+                >
+                  <h3 style={{ color: '#f39c12', marginTop: 0 }}>{lesson.title}</h3>
+                  <p style={{ color: '#999', margin: 0 }}>{lesson.description}</p>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+    );
+  }
+
+  // SAVED GAMES
+  if (screenMode === 'saved-games') {
+    return (
+      <div style={{
+        padding: '40px 20px',
+        maxWidth: '800px',
+        margin: '0 auto',
+        backgroundColor: '#0a0a0a',
+        minHeight: '100vh',
+        color: '#eee'
+      }}>
+        <button
+          onClick={() => setScreenMode('home')}
+          style={{
+            padding: '10px 20px',
+            backgroundColor: '#555',
+            color: 'white',
+            border: 'none',
+            borderRadius: '8px',
+            cursor: 'pointer',
+            marginBottom: '30px'
+          }}
+        >
+          ← BACK
+        </button>
+
+        <h1 style={{ marginBottom: '30px', color: '#f39c12' }}>💾 Saved Games</h1>
+
+        {savedGames.length > 0 ? (
+          <div style={{ display: 'grid', gap: '15px' }}>
+            {savedGames.map(game => (
+              <div key={game.id} style={{
+                backgroundColor: '#1a1a2e',
+                padding: '20px',
+                borderRadius: '10px',
+                border: '1px solid #333',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center'
+              }}>
+                <div>
+                  <h3 style={{ margin: '0 0 10px 0', color: '#f39c12' }}>
+                    Difficulty: {game.difficulty.toUpperCase()}
+                  </h3>
+                  <p style={{ margin: '0 0 5px 0', color: '#999', fontSize: '14px' }}>
+                    Saved: {game.timestamp}
+                  </p>
+                  <p style={{ margin: 0, color: '#999', fontSize: '14px' }}>
+                    Moves: {game.moveHistory.length}
+                  </p>
+                </div>
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <button
+                    onClick={() => resumeGame(game)}
+                    style={{
+                      padding: '10px 20px',
+                      backgroundColor: '#2ecc71',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '8px',
+                      cursor: 'pointer',
+                      fontWeight: 'bold'
+                    }}
+                  >
+                    Resume
+                  </button>
+                  <button
+                    onClick={() => deleteSavedGame(game.id)}
+                    style={{
+                      padding: '10px 20px',
+                      backgroundColor: '#e74c3c',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '8px',
+                      cursor: 'pointer',
+                      fontWeight: 'bold'
+                    }}
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div style={{
+            backgroundColor: '#1a1a2e',
+            padding: '40px',
+            borderRadius: '10px',
+            textAlign: 'center'
+          }}>
+            <p style={{ fontSize: '18px', color: '#999' }}>No saved games yet</p>
+            <p style={{ fontSize: '14px', color: '#666' }}>Start a new game and save it to see it here</p>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // DIFFICULTY SELECT
+  if (screenMode === 'menu') {
     return (
       <div style={{
         padding: '40px 20px',
@@ -1012,7 +1394,9 @@ const ChessApp = () => {
               setGameMessage('');
               setSelectedSquare(null);
               setLegalMoves([]);
+              setGameId(Date.now());
               setGameMode('playing');
+              setScreenMode('playing');
             }}
             style={{
               width: '100%',
@@ -1027,12 +1411,14 @@ const ChessApp = () => {
               fontWeight: 'bold'
             }}
           >
-            {level.toUpperCase()}
+            {level === 'easy' && '⭐ EASY (Hints visible)'}
+            {level === 'medium' && '⭐⭐ MEDIUM (Hints visible)'}
+            {level === 'hard' && '⭐⭐⭐ HARD (No hints!)'}
           </button>
         ))}
 
         <button
-          onClick={() => setGameMode('home')}
+          onClick={() => setScreenMode('home')}
           style={{
             width: '100%',
             padding: '15px',
@@ -1050,8 +1436,8 @@ const ChessApp = () => {
     );
   }
 
-  // GAME
-  if (gameMode === 'playing') {
+  // GAME SCREEN
+  if (screenMode === 'playing') {
     const isGameOver = gameStatus !== 'ongoing';
     
     return (
@@ -1080,7 +1466,7 @@ const ChessApp = () => {
               marginBottom: '15px'
             }}>
               <button
-                onClick={() => setGameMode('home')}
+                onClick={() => setScreenMode('home')}
                 style={{
                   padding: '10px 20px',
                   backgroundColor: '#555',
@@ -1119,6 +1505,7 @@ const ChessApp = () => {
                   </p>
                   <p>Moves: {moveHistory.length}</p>
                   {aiThinking && <p style={{ color: '#f39c12', fontWeight: 'bold' }}>⚡ AI thinks...</p>}
+                  {difficulty === 'hard' && <p style={{ color: '#f39c12', fontSize: '12px' }}>🔥 No hints in HARD mode!</p>}
                 </div>
               )}
             </div>
@@ -1126,6 +1513,20 @@ const ChessApp = () => {
             {renderBoard()}
 
             <div style={{ marginTop: '15px', textAlign: 'center' }}>
+              <button
+                onClick={saveGame}
+                style={{
+                  padding: '10px 20px',
+                  backgroundColor: '#3498db',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  marginRight: '10px'
+                }}
+              >
+                💾 SAVE GAME
+              </button>
               <button
                 onClick={() => {
                   setBoard(initializeBoard());
@@ -1136,6 +1537,7 @@ const ChessApp = () => {
                   setGameMessage('');
                   setSelectedSquare(null);
                   setLegalMoves([]);
+                  setGameId(Date.now());
                 }}
                 style={{
                   padding: '10px 20px',
@@ -1150,7 +1552,7 @@ const ChessApp = () => {
                 ↻ NEW GAME
               </button>
               <button
-                onClick={() => setGameMode('home')}
+                onClick={() => setScreenMode('home')}
                 style={{
                   padding: '10px 20px',
                   backgroundColor: '#e74c3c',
