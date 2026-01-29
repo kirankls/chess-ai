@@ -2,7 +2,8 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { RotateCcw, Save, Trophy, BookOpen, Clock, LogOut, Settings } from 'lucide-react';
 import axios from 'axios';
 
-const API_BASE_URL = 'http://localhost:5000/api';
+// Use environment variable if available, otherwise fallback to localhost
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 
 const ChessApp = () => {
   // Authentication
