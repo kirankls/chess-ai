@@ -113,15 +113,29 @@ const ChessApp = () => {
   }
 
   function getPieceSymbol(type, color) {
-    const symbols = {
-      pawn: '♟',
-      rook: '♜',
-      knight: '♞',
-      bishop: '♝',
-      queen: '♛',
-      king: '♚'
-    };
-    return symbols[type] || '';
+    if (color === 'white') {
+      // Filled white pieces
+      const whiteSymbols = {
+        pawn: '♙',
+        rook: '♖',
+        knight: '♘',
+        bishop: '♗',
+        queen: '♕',
+        king: '♔'
+      };
+      return whiteSymbols[type] || '';
+    } else {
+      // Outlined black pieces
+      const blackSymbols = {
+        pawn: '♟',
+        rook: '♜',
+        knight: '♞',
+        bishop: '♝',
+        queen: '♛',
+        king: '♚'
+      };
+      return blackSymbols[type] || '';
+    }
   }
 
   function getLegalMoves(boardState, row, col) {
@@ -566,6 +580,7 @@ const ChessApp = () => {
   };
 
   const renderBoard = () => {
+    const files = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
     return (
       <div style={{
         display: 'inline-block',
@@ -575,8 +590,24 @@ const ChessApp = () => {
         boxShadow: '0 0 20px rgba(0,0,0,0.5)',
         border: '3px solid #5a4a3a'
       }}>
+        {/* File labels (a-h) */}
+        <div style={{ display: 'flex', marginLeft: '30px', marginBottom: '3px' }}>
+          {files.map((file, i) => (
+            <div key={`file-${i}`} style={{ width: '70px', textAlign: 'center', color: '#333', fontWeight: 'bold', fontSize: '12px' }}>
+              {file}
+            </div>
+          ))}
+        </div>
+
+        {/* Board rows */}
         {board.map((row, r) => (
           <div key={r} style={{ display: 'flex' }}>
+            {/* Rank label (8-1) */}
+            <div style={{ width: '25px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#333', fontWeight: 'bold', fontSize: '12px' }}>
+              {8 - r}
+            </div>
+
+            {/* Board squares */}
             {row.map((piece, c) => {
               const isSelected = selectedSquare && selectedSquare[0] === r && selectedSquare[1] === c;
               const isLegal = legalMoves.some(m => m[0] === r && m[1] === c);
@@ -598,12 +629,13 @@ const ChessApp = () => {
               }
 
               // Determine piece color for rendering
-              let pieceColor = '#000000';  // Default black
-              let textOutline = '2px 2px 0px #FFFFFF, -2px -2px 0px #FFFFFF, 2px -2px 0px #FFFFFF, -2px 2px 0px #FFFFFF';
+              let pieceColor = '#1a1a1a';  // Black pieces dark
+              let textOutline = 'none';
 
               if (piece && piece.color === 'white') {
-                pieceColor = '#FFFFFF';  // Bright white
-                textOutline = '2px 2px 0px #000000, -2px -2px 0px #000000, 2px -2px 0px #000000, -2px 2px 0px #000000';
+                // White pieces: BRIGHT YELLOW for maximum visibility
+                pieceColor = '#FFFF00';  // Bright yellow - SUPER visible!
+                textOutline = '-1px -1px 0px #000000, 1px -1px 0px #000000, -1px 1px 0px #000000, 1px 1px 0px #000000';
               }
 
               return (
@@ -627,11 +659,15 @@ const ChessApp = () => {
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    fontSize: '56px',
+                    fontSize: piece && piece.type === 'pawn' ? '40px' : '50px',
                     fontWeight: 'bold',
                     textShadow: textOutline,
                     color: pieceColor,
-                    transition: 'background-color 0.08s linear'
+                    transition: 'background-color 0.08s linear',
+                    lineHeight: '1',
+                    position: 'relative',
+                    filter: 'none',
+                    fontFamily: 'Arial, sans-serif'
                   }}
                 >
                   {piece && getPieceSymbol(piece.type, piece.color)}
