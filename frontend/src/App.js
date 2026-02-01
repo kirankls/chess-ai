@@ -846,18 +846,20 @@ const ChessApp = () => {
                   onDragEnd={handleDragEnd}
                   onClick={() => handleSquareClick(r, c)}
                   style={{
-                    width: '70px',
-                    height: '70px',
+                    width: squareSize,
+                    height: squareSize,
+                    minWidth: squareSize,
+                    minHeight: squareSize,
                     padding: '0',
                     border: 'none',
                     backgroundColor: backgroundColor,
                     cursor: (piece && piece.color === 'white' && gameStatus === 'ongoing' && currentTurn === 'white' && !aiThinking) 
                       ? 'grab' 
-                      : 'default',
+                      : 'pointer',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    fontSize: piece && piece.type === 'pawn' ? '40px' : '50px',
+                    fontSize: piece && piece.type === 'pawn' ? pawnFontSize : pieceFontSize,
                     fontWeight: 'bold',
                     textShadow: textOutline,
                     color: pieceColor,
@@ -865,7 +867,10 @@ const ChessApp = () => {
                     lineHeight: '1',
                     position: 'relative',
                     filter: 'none',
-                    fontFamily: 'Arial, sans-serif'
+                    fontFamily: 'Arial, sans-serif',
+                    touchAction: 'none',
+                    WebkitUserSelect: 'none',
+                    userSelect: 'none'
                   }}
                 >
                   {piece && getPieceSymbol(piece.type, piece.color)}
