@@ -377,10 +377,6 @@ const ChessApp = () => {
     return true;
   }
 
-  // Drag and drop state
-  const [draggedPiece, setDraggedPiece] = useState(null);
-  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
-
   // Handle square click (for fallback click-to-move)
   const handleSquareClick = (row, col) => {
     if (gameStatus !== 'ongoing' || currentTurn !== 'white' || aiThinking) return;
@@ -411,6 +407,11 @@ const ChessApp = () => {
     setLegalMoves([]);
   };
 
+
+  const [draggedPiece, setDraggedPiece] = useState(null);
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const [hoveredSquare, setHoveredSquare] = useState(null);
+
   // Handle drag start
   const handleDragStart = (e, row, col) => {
     if (gameStatus !== 'ongoing' || currentTurn !== 'white' || aiThinking) return;
@@ -426,22 +427,35 @@ const ChessApp = () => {
     }
     setDraggedPiece({ row, col, piece });
     
-    // Set drag image
-    const dragImage = new Image();
-    dragImage.src = 'data:image/gif;base64,R0lGODlhAQABAAAAACw=';
-    e.dataTransfer.setDragImage(dragImage, 0, 0);
+    // Create custom drag image
+    const canvas = document.createElement('canvas');
+    canvas.width = 70;
+    canvas.height = 70;
+    const ctx = canvas.getContext('2d');
+    ctx.font = 'bold 54px Arial';
+    ctx.fillStyle = piece.color === 'white' ? '#FFFACD' : '#1a1a1a';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.shadowColor = 'rgba(0,0,0,0.5)';
+    ctx.shadowBlur = 4;
+    ctx.shadowOffsetX = 2;
+    ctx.shadowOffsetY = 2;
+    ctx.fillText(getPieceSymbol(piece.type, piece.color), 35, 35);
+    e.dataTransfer.setDragImage(canvas, 35, 35);
     e.dataTransfer.effectAllowed = 'move';
   };
 
   // Handle drag over
-  const handleDragOver = (e) => {
+  const handleDragOver = (e, row, col) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
+    setHoveredSquare([row, col]);
   };
 
   // Handle drop
   const handleDrop = (e, toRow, toCol) => {
     e.preventDefault();
+    setHoveredSquare(null);
     
     if (!draggedPiece || !selectedSquare) {
       setDraggedPiece(null);
@@ -468,6 +482,7 @@ const ChessApp = () => {
   // Handle drag end
   const handleDragEnd = () => {
     setDraggedPiece(null);
+    setHoveredSquare(null);
     setSelectedSquare(null);
     setLegalMoves([]);
   };
@@ -583,7 +598,7 @@ const ChessApp = () => {
         console.error('AI move error:', error);
         setAiThinking(false);
       }
-    }, 300);
+    }, 50);  // Ultra-fast - only 50ms delay for instant response
   };
 
   // Minimax
@@ -781,13 +796,16 @@ const ChessApp = () => {
             {row.map((piece, c) => {
               const isSelected = selectedSquare && selectedSquare[0] === r && selectedSquare[1] === c;
               const isLegal = legalMoves.some(m => m[0] === r && m[1] === c);
+              const isHovered = hoveredSquare && hoveredSquare[0] === r && hoveredSquare[1] === c;
               const isLight = (r + c) % 2 === 0;
               
               const isLastMoveSource = lastMove && lastMove.from[0] === r && lastMove.from[1] === c;
               const isLastMoveDest = lastMove && lastMove.to[0] === r && lastMove.to[1] === c;
 
               let backgroundColor;
-              if (isLastMoveSource) {
+              if (isHovered) {
+                backgroundColor = '#2ecc71';  // Green on hover
+              } else if (isLastMoveSource) {
                 backgroundColor = '#FFF8DC';
               } else if (isLastMoveDest) {
                 backgroundColor = '#FFFFCC';
@@ -804,15 +822,16 @@ const ChessApp = () => {
                   key={`${r}-${c}`}
                   draggable={piece && piece.color === 'white' && gameStatus === 'ongoing' && currentTurn === 'white' && !aiThinking}
                   onDragStart={(e) => handleDragStart(e, r, c)}
-                  onDragOver={handleDragOver}
+                  onDragOver={(e) => handleDragOver(e, r, c)}
                   onDrop={(e) => handleDrop(e, r, c)}
                   onDragEnd={handleDragEnd}
+                  onDragLeave={() => setHoveredSquare(null)}
                   onClick={() => handleSquareClick(r, c)}
                   style={{
                     width: '70px',
                     height: '70px',
                     padding: '0',
-                    border: isLegal ? '2px solid #2ecc71' : 'none',
+                    border: isLegal ? '3px solid #2ecc71' : 'none',
                     backgroundColor: backgroundColor,
                     cursor: (piece && piece.color === 'white' && gameStatus === 'ongoing' && currentTurn === 'white' && !aiThinking) 
                       ? 'grab' 
@@ -826,8 +845,10 @@ const ChessApp = () => {
                       ? '0 0 5px rgba(0,0,0,0.9), 2px 2px 4px rgba(0,0,0,0.8)' 
                       : '0 0 3px rgba(255,255,255,0.8)',
                     color: piece?.color === 'white' ? '#FFFACD' : '#1a1a1a',
-                    transition: 'background-color 0.2s',
-                    opacity: draggedPiece && draggedPiece.row === r && draggedPiece.col === c ? 0.5 : 1
+                    transition: 'all 0.15s cubic-bezier(0.4, 0, 0.2, 1)',
+                    opacity: draggedPiece && draggedPiece.row === r && draggedPiece.col === c ? 0.3 : 1,
+                    transform: isHovered ? 'scale(1.05)' : 'scale(1)',
+                    boxShadow: isHovered ? 'inset 0 0 10px rgba(46, 204, 113, 0.5)' : 'none'
                   }}
                 >
                   {piece && getPieceSymbol(piece.type, piece.color)}
