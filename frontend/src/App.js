@@ -54,17 +54,6 @@ const ChessApp = () => {
   const [leaderboard, setLeaderboard] = useState({ easy: [], medium: [], hard: [] });
   const [capturedPieces, setCapturedPieces] = useState({ white: [], black: [] });
   const [trainingTopic, setTrainingTopic] = useState(null);
-  
-  // Mobile responsive detection
-  const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' && window.innerWidth < 768);
-  
-  useEffect(() => {
-    const handleResize = () => {
-      setIsMobile(window.innerWidth < 768);
-    };
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
 
   // Save accounts to localStorage
   const saveAccounts = (newAccounts) => {
