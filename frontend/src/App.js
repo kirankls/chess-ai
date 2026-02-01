@@ -133,6 +133,8 @@ const ChessApp = () => {
     setPassword('');
     setEmail('');
   };
+
+  const trainingLessons = {
     'piece-movements': {
       title: '♞ Piece Movements',
       description: 'Learn how each piece moves',
