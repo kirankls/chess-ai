@@ -522,7 +522,7 @@ const ChessApp = () => {
     let bestMove = null;
     let bestValue = -Infinity;
     
-    const depths = { easy: 1, medium: 2, hard: 3 };
+    const depths = { easy: 1, medium: 2, hard: 5 };
     const maxDepth = depths[difficulty];
 
     let moves = [];
