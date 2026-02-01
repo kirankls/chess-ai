@@ -25,7 +25,7 @@ const ChessApp = () => {
   const [lastMove, setLastMove] = useState(null);
   const dragDataRef = useRef(null);
 
-  // Castling state
+  // Castling
   const [castlingRights, setCastlingRights] = useState({
     white: { kingside: true, queenside: true },
     black: { kingside: true, queenside: true }
@@ -35,6 +35,17 @@ const ChessApp = () => {
   const [leaderboard, setLeaderboard] = useState({ easy: [], medium: [], hard: [] });
   const [capturedPieces, setCapturedPieces] = useState({ white: [], black: [] });
   const [trainingTopic, setTrainingTopic] = useState(null);
+
+  // Responsive hook
+  const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' && window.innerWidth < 768);
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   const trainingLessons = {
     'piece-movements': {
@@ -113,13 +124,14 @@ const ChessApp = () => {
   }
 
   function getPieceSymbol(type, color) {
+    // Use filled/solid symbols for white, outlined for black
     const symbols = {
-      pawn: '♟',
-      rook: '♜',
-      knight: '♞',
-      bishop: '♝',
-      queen: '♛',
-      king: '♚'
+      pawn: color === 'white' ? '♙' : '♟',
+      rook: color === 'white' ? '♖' : '♜',
+      knight: color === 'white' ? '♘' : '♞',
+      bishop: color === 'white' ? '♗' : '♝',
+      queen: color === 'white' ? '♕' : '♛',
+      king: color === 'white' ? '♔' : '♚'
     };
     return symbols[type] || '';
   }
@@ -414,14 +426,12 @@ const ChessApp = () => {
     setLegalMoves([]);
     setCurrentTurn('black');
 
-    // Call AI immediately - no delay
     makeAIMove(newBoard, [...moveHistory, moveNotation]);
   };
 
   const makeAIMove = (boardState, moves) => {
     setAiThinking(true);
 
-    // Ultra-fast AI with minimal computation
     const bestMove = findBestAIMove(boardState);
 
     if (bestMove) {
@@ -467,7 +477,8 @@ const ChessApp = () => {
     let bestMove = null;
     let bestValue = -Infinity;
     
-    const depths = { easy: 1, medium: 2, hard: 3 };
+    // FASTER: Reduced depth for speed
+    const depths = { easy: 1, medium: 2, hard: 2 };
     const maxDepth = depths[difficulty];
 
     let moves = [];
@@ -477,16 +488,20 @@ const ChessApp = () => {
         if (piece && piece.color === 'black') {
           const legalMoves = getLegalMoves(boardState, r, c);
           for (let move of legalMoves) {
-            moves.push({ from: [r, c], to: move, score: 0 });
+            const score = scoreMoveForOrdering(boardState, r, c, move[0], move[1]);
+            moves.push({ from: [r, c], to: move, score: score });
           }
         }
       }
     }
 
-    moves.sort(() => Math.random() - 0.5);
-    const limit = Math.min(moves.length, difficulty === 'easy' ? 5 : difficulty === 'medium' ? 10 : moves.length);
+    // Sort by score (best first)
+    moves.sort((a, b) => b.score - a.score);
 
-    for (let i = 0; i < limit; i++) {
+    // FASTER: Evaluate fewer moves
+    const limit = difficulty === 'easy' ? 4 : difficulty === 'medium' ? 8 : 12;
+
+    for (let i = 0; i < Math.min(limit, moves.length); i++) {
       const moveObj = moves[i];
       const newBoard = boardState.map(r => [...r]);
       const piece = newBoard[moveObj.from[0]][moveObj.from[1]];
@@ -501,7 +516,54 @@ const ChessApp = () => {
       }
     }
 
-    return bestMove;
+    return bestMove || (moves.length > 0 ? { from: moves[0].from, to: moves[0].to } : null);
+  };
+
+  const scoreMoveForOrdering = (boardState, fromR, fromC, toR, toC) => {
+    let score = 0;
+    const piece = boardState[fromR][fromC];
+    const target = boardState[toR][toC];
+
+    if (target) {
+      const pieceValues = { pawn: 1, knight: 3, bishop: 3, rook: 5, queen: 9 };
+      const captureValue = pieceValues[target.type] * 100;
+      const attackerValue = pieceValues[piece.type] * 10;
+      score += captureValue - attackerValue;
+    }
+
+    const testBoard = boardState.map(r => [...r]);
+    testBoard[toR][toC] = piece;
+    testBoard[fromR][fromC] = null;
+    if (isCheckmate(testBoard, 'white')) {
+      return 100000;
+    }
+
+    if (isKingInCheck(testBoard, 'white')) {
+      score += 500;
+    }
+
+    if (piece.type === 'pawn' && toR === 7) {
+      score += 800;
+    }
+
+    const centerSquares = [[3, 3], [3, 4], [4, 3], [4, 4]];
+    const innerCenter = [[2, 2], [2, 3], [2, 4], [2, 5], [3, 2], [3, 5], [4, 2], [4, 5], [5, 2], [5, 3], [5, 4], [5, 5]];
+    
+    if (centerSquares.some(sq => sq[0] === toR && sq[1] === toC)) {
+      score += 50;
+    } else if (innerCenter.some(sq => sq[0] === toR && sq[1] === toC)) {
+      score += 25;
+    }
+
+    if ((piece.type === 'knight' || piece.type === 'bishop') && fromR === 7) {
+      score += 30;
+    }
+
+    if (piece.type === 'pawn') {
+      score += (6 - toR) * 5;
+    }
+
+    return score;
   };
 
   const minimax = (boardState, depth, alpha, beta, isMaximizing, maxDepth) => {
@@ -509,8 +571,8 @@ const ChessApp = () => {
       return evaluatePosition(boardState);
     }
 
-    if (isCheckmate(boardState, 'white')) return 10000 + depth;
-    if (isCheckmate(boardState, 'black')) return -10000 - depth;
+    if (isCheckmate(boardState, 'white')) return 50000 + depth;
+    if (isCheckmate(boardState, 'black')) return -50000 - depth;
 
     const color = isMaximizing ? 'black' : 'white';
     let bestValue = isMaximizing ? -Infinity : Infinity;
@@ -522,11 +584,16 @@ const ChessApp = () => {
         if (piece && piece.color === color) {
           const legalMoves = getLegalMoves(boardState, r, c);
           for (let move of legalMoves) {
-            moves.push({ from: [r, c], to: move });
+            const moveScore = isMaximizing 
+              ? scoreMoveForOrdering(boardState, r, c, move[0], move[1])
+              : -scoreMoveForOrdering(boardState, r, c, move[0], move[1]);
+            moves.push({ from: [r, c], to: move, score: moveScore });
           }
         }
       }
     }
+
+    moves.sort((a, b) => b.score - a.score);
 
     for (let moveObj of moves) {
       const newBoard = boardState.map(r => [...r]);
@@ -559,22 +626,95 @@ const ChessApp = () => {
         const piece = boardState[r][c];
         if (piece) {
           const value = pieceValues[piece.type] || 0;
-          score += piece.color === 'black' ? value : -value;
+          if (piece.color === 'black') {
+            score += value;
+          } else {
+            score -= value;
+          }
         }
       }
     }
+
+    for (let r = 0; r < 8; r++) {
+      for (let c = 0; c < 8; c++) {
+        const piece = boardState[r][c];
+        if (!piece) continue;
+
+        let posValue = 0;
+
+        const distance = Math.abs(r - 3.5) + Math.abs(c - 3.5);
+        posValue += (7 - distance) * 5;
+
+        if (piece.type === 'pawn') {
+          if (piece.color === 'black') {
+            posValue += (6 - r) * 10;
+          } else {
+            posValue += (r - 1) * 10;
+          }
+        }
+
+        if (piece.type === 'knight') {
+          if (c === 0 || c === 7 || r === 0 || r === 7) posValue -= 30;
+        }
+
+        if (piece.type === 'bishop') {
+          const diagonalLength = Math.min(r, c, 7-r, 7-c);
+          posValue += diagonalLength * 5;
+        }
+
+        if (piece.type === 'rook') {
+          let isOpenFile = true;
+          for (let i = 0; i < 8; i++) {
+            if (i !== r && boardState[i][c] !== null) {
+              isOpenFile = false;
+              break;
+            }
+          }
+          if (isOpenFile) posValue += 50;
+        }
+
+        if (piece.color === 'black') {
+          score += posValue;
+        } else {
+          score -= posValue;
+        }
+      }
+    }
+
+    let blackMobility = 0;
+    let whiteMobility = 0;
+
+    for (let r = 0; r < 8; r++) {
+      for (let c = 0; c < 8; c++) {
+        const piece = boardState[r][c];
+        if (piece) {
+          const moves = getAllPseudoLegalMoves(boardState, r, c);
+          if (piece.color === 'black') {
+            blackMobility += moves.length;
+          } else {
+            whiteMobility += moves.length;
+          }
+        }
+      }
+    }
+
+    score += (blackMobility - whiteMobility) * 2;
+
     return score;
   };
 
   const renderBoard = () => {
+    const squareSize = isMobile ? 45 : 70;
+    const fontSize = isMobile ? 36 : 56;
+
     return (
       <div style={{
         display: 'inline-block',
-        padding: '10px',
+        padding: isMobile ? '6px' : '10px',
         backgroundColor: '#8b7355',
-        borderRadius: '8px',
-        boxShadow: '0 0 20px rgba(0,0,0,0.5)',
-        border: '3px solid #5a4a3a'
+        borderRadius: isMobile ? '6px' : '8px',
+        boxShadow: '0 0 15px rgba(0,0,0,0.5)',
+        border: `${isMobile ? 2 : 3}px solid #5a4a3a`
       }}>
         {board.map((row, r) => (
           <div key={r} style={{ display: 'flex' }}>
@@ -598,12 +738,11 @@ const ChessApp = () => {
                 backgroundColor = isLight ? '#f0d9b5' : '#b58863';
               }
 
-              // Determine piece color for rendering
-              let pieceColor = '#000000';  // Default black
+              let pieceColor = '#000000';
               let textOutline = '2px 2px 0px #FFFFFF, -2px -2px 0px #FFFFFF, 2px -2px 0px #FFFFFF, -2px 2px 0px #FFFFFF';
 
               if (piece && piece.color === 'white') {
-                pieceColor = '#FFFFFF';  // Bright white
+                pieceColor = '#FFFFFF';
                 textOutline = '2px 2px 0px #000000, -2px -2px 0px #000000, 2px -2px 0px #000000, -2px 2px 0px #000000';
               }
 
@@ -617,8 +756,8 @@ const ChessApp = () => {
                   onDragEnd={handleDragEnd}
                   onClick={() => handleSquareClick(r, c)}
                   style={{
-                    width: '70px',
-                    height: '70px',
+                    width: `${squareSize}px`,
+                    height: `${squareSize}px`,
                     padding: '0',
                     border: 'none',
                     backgroundColor: backgroundColor,
@@ -628,11 +767,12 @@ const ChessApp = () => {
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    fontSize: '56px',
+                    fontSize: `${fontSize}px`,
                     fontWeight: 'bold',
                     textShadow: textOutline,
                     color: pieceColor,
-                    transition: 'background-color 0.08s linear'
+                    transition: 'background-color 0.08s linear',
+                    touchAction: 'none'
                   }}
                 >
                   {piece && getPieceSymbol(piece.type, piece.color)}
@@ -649,19 +789,44 @@ const ChessApp = () => {
     const isMyTurn = currentTurn === 'white';
     return (
       <div style={{
-        padding: '12px 20px',
+        padding: isMobile ? '10px 15px' : '12px 20px',
         backgroundColor: isMyTurn ? '#27ae60' : '#c0392b',
         color: 'white',
         borderRadius: '6px',
         marginBottom: '15px',
         textAlign: 'center',
-        fontSize: '16px',
+        fontSize: isMobile ? '14px' : '16px',
         fontWeight: 'bold'
       }}>
         {isMyTurn ? `♔ YOUR TURN` : `♚ AI ${aiThinking ? '⚡' : 'THINKING'}`}
-        {lastMove && <div style={{ fontSize: '11px', marginTop: '3px' }}>Last: {lastMove.notation}</div>}
+        {lastMove && <div style={{ fontSize: isMobile ? '10px' : '11px', marginTop: '3px' }}>Last: {lastMove.notation}</div>}
       </div>
     );
+  };
+
+  const buttonStyle = (bg) => ({
+    width: '100%',
+    padding: isMobile ? '12px' : '15px',
+    backgroundColor: bg,
+    color: 'white',
+    border: 'none',
+    borderRadius: isMobile ? '6px' : '8px',
+    fontSize: isMobile ? '14px' : '16px',
+    fontWeight: 'bold',
+    cursor: 'pointer',
+    marginBottom: '10px'
+  });
+
+  const containerStyle = {
+    minHeight: '100vh',
+    padding: isMobile ? '20px 15px' : '40px 20px',
+    backgroundColor: '#0a0a0a',
+    color: '#fff'
+  };
+
+  const maxWidthContainer = {
+    maxWidth: isMobile ? '100%' : '800px',
+    margin: '0 auto'
   };
 
   // LOGIN
@@ -672,15 +837,19 @@ const ChessApp = () => {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: '#0a0a0a'
+        backgroundColor: '#0a0a0a',
+        padding: isMobile ? '20px' : '0'
       }}>
         <div style={{
           backgroundColor: '#1a1a2e',
-          padding: '40px',
-          borderRadius: '10px',
-          textAlign: 'center'
+          padding: isMobile ? '30px 20px' : '40px',
+          borderRadius: isMobile ? '8px' : '10px',
+          textAlign: 'center',
+          width: '100%',
+          maxWidth: '400px'
         }}>
-          <h1 style={{ color: '#f39c12', marginBottom: '30px', fontSize: '36px' }}>♔ CHESS MASTER</h1>
+          <h1 style={{ color: '#f39c12', marginBottom: '30px', fontSize: isMobile ? '28px' : '36px' }}>♔ CHESS</h1>
+
           <input
             type="text"
             placeholder="Username"
@@ -688,15 +857,17 @@ const ChessApp = () => {
             onChange={(e) => setUsername(e.target.value)}
             style={{
               width: '100%',
-              padding: '12px',
+              padding: isMobile ? '10px' : '12px',
               marginBottom: '10px',
               borderRadius: '5px',
               border: 'none',
               backgroundColor: '#252541',
               color: '#eee',
-              boxSizing: 'border-box'
+              boxSizing: 'border-box',
+              fontSize: isMobile ? '14px' : '16px'
             }}
           />
+
           {isRegistering && (
             <input
               type="email"
@@ -705,16 +876,18 @@ const ChessApp = () => {
               onChange={(e) => setEmail(e.target.value)}
               style={{
                 width: '100%',
-                padding: '12px',
+                padding: isMobile ? '10px' : '12px',
                 marginBottom: '10px',
                 borderRadius: '5px',
                 border: 'none',
                 backgroundColor: '#252541',
                 color: '#eee',
-                boxSizing: 'border-box'
+                boxSizing: 'border-box',
+                fontSize: isMobile ? '14px' : '16px'
               }}
             />
           )}
+
           <input
             type="password"
             placeholder="Password"
@@ -722,45 +895,30 @@ const ChessApp = () => {
             onChange={(e) => setPassword(e.target.value)}
             style={{
               width: '100%',
-              padding: '12px',
+              padding: isMobile ? '10px' : '12px',
               marginBottom: '20px',
               borderRadius: '5px',
               border: 'none',
               backgroundColor: '#252541',
               color: '#eee',
-              boxSizing: 'border-box'
+              boxSizing: 'border-box',
+              fontSize: isMobile ? '14px' : '16px'
             }}
           />
+
           <button
             onClick={() => {
               setIsLoggedIn(true);
               setCurrentPlayerInfo({ username });
             }}
-            style={{
-              width: '100%',
-              padding: '12px',
-              backgroundColor: '#f39c12',
-              color: 'white',
-              border: 'none',
-              borderRadius: '5px',
-              cursor: 'pointer',
-              fontWeight: 'bold',
-              marginBottom: '10px'
-            }}
+            style={buttonStyle('#f39c12')}
           >
             {isRegistering ? 'REGISTER' : 'LOGIN'}
           </button>
+
           <button
             onClick={() => setIsRegistering(!isRegistering)}
-            style={{
-              width: '100%',
-              padding: '12px',
-              backgroundColor: '#555',
-              color: 'white',
-              border: 'none',
-              borderRadius: '5px',
-              cursor: 'pointer'
-            }}
+            style={buttonStyle('#555')}
           >
             {isRegistering ? 'Back to Login' : 'Create Account'}
           </button>
@@ -769,21 +927,17 @@ const ChessApp = () => {
     );
   }
 
-  // MENU
+  // HOME MENU
   if (screenMode === 'menu') {
     return (
-      <div style={{
-        minHeight: '100vh',
-        padding: '40px 20px',
-        backgroundColor: '#0a0a0a',
-        color: '#fff'
-      }}>
-        <div style={{ maxWidth: '800px', margin: '0 auto' }}>
-          <h1 style={{ textAlign: 'center', color: '#f39c12', marginBottom: '40px', fontSize: '48px' }}>♔ CHESS MASTER</h1>
-          <button onClick={() => { setGameMode('difficulty'); setScreenMode('game'); }} style={{ width: '100%', padding: '20px', backgroundColor: '#f39c12', color: 'white', border: 'none', borderRadius: '8px', fontSize: '18px', fontWeight: 'bold', cursor: 'pointer', marginBottom: '15px' }}>⚔️ PLAY vs AI</button>
-          <button onClick={() => setScreenMode('training')} style={{ width: '100%', padding: '20px', backgroundColor: '#3498db', color: 'white', border: 'none', borderRadius: '8px', fontSize: '18px', fontWeight: 'bold', cursor: 'pointer', marginBottom: '15px' }}>📚 TRAINING</button>
-          <button onClick={() => setScreenMode('leaderboard')} style={{ width: '100%', padding: '20px', backgroundColor: '#2ecc71', color: 'white', border: 'none', borderRadius: '8px', fontSize: '18px', fontWeight: 'bold', cursor: 'pointer', marginBottom: '15px' }}>🏆 LEADERBOARD</button>
-          <button onClick={() => setIsLoggedIn(false)} style={{ width: '100%', padding: '15px', backgroundColor: '#e74c3c', color: 'white', border: 'none', borderRadius: '8px', fontSize: '16px', fontWeight: 'bold', cursor: 'pointer' }}>LOGOUT</button>
+      <div style={containerStyle}>
+        <div style={maxWidthContainer}>
+          <h1 style={{ textAlign: 'center', color: '#f39c12', marginBottom: '40px', fontSize: isMobile ? '36px' : '48px' }}>♔ CHESS</h1>
+
+          <button onClick={() => { setGameMode('difficulty'); setScreenMode('game'); }} style={buttonStyle('#f39c12')}>⚔️ PLAY vs AI</button>
+          <button onClick={() => setScreenMode('training')} style={buttonStyle('#3498db')}>📚 TRAINING</button>
+          <button onClick={() => setScreenMode('leaderboard')} style={buttonStyle('#2ecc71')}>🏆 LEADERBOARD</button>
+          <button onClick={() => setIsLoggedIn(false)} style={buttonStyle('#e74c3c')}>LOGOUT</button>
         </div>
       </div>
     );
@@ -792,31 +946,26 @@ const ChessApp = () => {
   // TRAINING
   if (screenMode === 'training') {
     return (
-      <div style={{
-        minHeight: '100vh',
-        padding: '40px 20px',
-        backgroundColor: '#0a0a0a',
-        color: '#fff'
-      }}>
-        <div style={{ maxWidth: '800px', margin: '0 auto' }}>
-          <button onClick={() => setScreenMode('menu')} style={{ marginBottom: '20px', padding: '10px 20px', backgroundColor: '#555', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>← BACK</button>
+      <div style={containerStyle}>
+        <div style={maxWidthContainer}>
+          <button onClick={() => setScreenMode('menu')} style={{ marginBottom: '20px', padding: '8px 15px', backgroundColor: '#555', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', fontSize: isMobile ? '12px' : '14px' }}>← BACK</button>
           {trainingTopic ? (
             <>
-              <h2 style={{ color: '#f39c12', marginBottom: '20px' }}>{trainingLessons[trainingTopic].title}</h2>
-              <div style={{ backgroundColor: '#1a1a2e', padding: '20px', borderRadius: '8px', marginBottom: '20px' }}>
+              <h2 style={{ color: '#f39c12', marginBottom: '15px', fontSize: isMobile ? '18px' : '20px' }}>{trainingLessons[trainingTopic].title}</h2>
+              <div style={{ backgroundColor: '#1a1a2e', padding: '15px', borderRadius: '8px', marginBottom: '15px' }}>
                 {trainingLessons[trainingTopic].tips.map((tip, i) => (
-                  <div key={i} style={{ color: '#ddd', marginBottom: '10px', lineHeight: '1.6', fontSize: '14px' }}>{tip}</div>
+                  <div key={i} style={{ color: '#ddd', marginBottom: '10px', lineHeight: '1.5', fontSize: isMobile ? '13px' : '14px' }}>{tip}</div>
                 ))}
               </div>
-              <button onClick={() => setTrainingTopic(null)} style={{ width: '100%', padding: '12px', backgroundColor: '#3498db', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold' }}>← BACK TO LESSONS</button>
+              <button onClick={() => setTrainingTopic(null)} style={buttonStyle('#3498db')}>← BACK</button>
             </>
           ) : (
             <>
-              <h2 style={{ textAlign: 'center', marginBottom: '30px', color: '#f39c12' }}>📚 TRAINING MODE</h2>
+              <h2 style={{ textAlign: 'center', marginBottom: '20px', color: '#f39c12', fontSize: isMobile ? '22px' : '24px' }}>📚 TRAINING</h2>
               {Object.entries(trainingLessons).map(([key, lesson]) => (
-                <button key={key} onClick={() => setTrainingTopic(key)} style={{ width: '100%', padding: '20px', backgroundColor: '#1a1a2e', color: '#fff', border: '2px solid #f39c12', borderRadius: '8px', marginBottom: '10px', cursor: 'pointer', textAlign: 'left' }}>
-                  <div style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '5px' }}>{lesson.title}</div>
-                  <div style={{ fontSize: '12px', color: '#999' }}>{lesson.description}</div>
+                <button key={key} onClick={() => setTrainingTopic(key)} style={{ width: '100%', padding: '15px', backgroundColor: '#1a1a2e', color: '#fff', border: '2px solid #f39c12', borderRadius: '6px', marginBottom: '10px', cursor: 'pointer', textAlign: 'left', fontSize: isMobile ? '14px' : '16px' }}>
+                  <div style={{ fontWeight: 'bold', marginBottom: '3px' }}>{lesson.title}</div>
+                  <div style={{ fontSize: isMobile ? '11px' : '12px', color: '#999' }}>{lesson.description}</div>
                 </button>
               ))}
             </>
@@ -828,30 +977,52 @@ const ChessApp = () => {
 
   // LEADERBOARD
   if (screenMode === 'leaderboard') {
+    const gridCols = isMobile ? '1fr' : '1fr 1fr 1fr';
     return (
-      <div style={{
-        minHeight: '100vh',
-        padding: '40px 20px',
-        backgroundColor: '#0a0a0a',
-        color: '#fff'
-      }}>
-        <div style={{ maxWidth: '1000px', margin: '0 auto' }}>
-          <button onClick={() => setScreenMode('menu')} style={{ marginBottom: '20px', padding: '10px 20px', backgroundColor: '#555', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>← BACK</button>
-          <h2 style={{ textAlign: 'center', marginBottom: '30px', color: '#f39c12', fontSize: '32px' }}>🏆 LEADERBOARD</h2>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px' }}>
+      <div style={containerStyle}>
+        <div style={{ maxWidth: isMobile ? '100%' : '1000px', margin: '0 auto' }}>
+          <button onClick={() => setScreenMode('menu')} style={{ marginBottom: '20px', padding: '8px 15px', backgroundColor: '#555', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', fontSize: isMobile ? '12px' : '14px' }}>← BACK</button>
+          <h2 style={{ textAlign: 'center', marginBottom: '30px', color: '#f39c12', fontSize: isMobile ? '28px' : '32px' }}>🏆 LEADERBOARD</h2>
+
+          <div style={{ display: 'grid', gridTemplateColumns: gridCols, gap: '15px' }}>
             {['easy', 'medium', 'hard'].map(level => (
-              <div key={level} style={{ backgroundColor: '#1a1a2e', padding: '20px', borderRadius: '8px' }}>
-                <h3 style={{ color: level === 'easy' ? '#2ecc71' : level === 'medium' ? '#f39c12' : '#e74c3c', marginTop: '0' }}>{level === 'easy' ? '⭐ EASY' : level === 'medium' ? '⭐⭐ MEDIUM' : '⭐⭐⭐ HARD'}</h3>
+              <div
+                key={level}
+                style={{
+                  backgroundColor: '#1a1a2e',
+                  padding: '15px',
+                  borderRadius: '8px',
+                  borderLeft: `4px solid ${level === 'easy' ? '#2ecc71' : level === 'medium' ? '#f39c12' : '#e74c3c'}`
+                }}
+              >
+                <h3 style={{
+                  color: level === 'easy' ? '#2ecc71' : level === 'medium' ? '#f39c12' : '#e74c3c',
+                  marginTop: '0',
+                  fontSize: isMobile ? '14px' : '16px'
+                }}>
+                  {level === 'easy' ? '⭐ EASY' : level === 'medium' ? '⭐⭐ MEDIUM' : '⭐⭐⭐ HARD'}
+                </h3>
+
                 {leaderboard[level].slice(0, 10).length > 0 ? (
                   leaderboard[level].slice(0, 10).map((entry, i) => (
-                    <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px', borderBottom: '1px solid #333', fontSize: '12px' }}>
+                    <div
+                      key={i}
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        padding: '8px',
+                        borderBottom: '1px solid #333',
+                        fontSize: isMobile ? '11px' : '12px'
+                      }}
+                    >
                       <span style={{ color: '#f39c12', fontWeight: 'bold' }}>#{i + 1}</span>
-                      <span style={{ color: '#ddd', flex: 1, marginLeft: '10px' }}>{entry.playerName}</span>
-                      <span style={{ color: level === 'easy' ? '#2ecc71' : level === 'medium' ? '#f39c12' : '#e74c3c' }}>{entry.moves}m</span>
+                      <span style={{ color: '#ddd', flex: 1, marginLeft: '10px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{entry.playerName}</span>
+                      <span style={{ color: level === 'easy' ? '#2ecc71' : level === 'medium' ? '#f39c12' : '#e74c3c', marginLeft: '10px' }}>{entry.moves}m</span>
                     </div>
                   ))
                 ) : (
-                  <div style={{ color: '#666', textAlign: 'center', padding: '20px' }}>No wins yet</div>
+                  <div style={{ color: '#666', textAlign: 'center', padding: '15px', fontSize: '12px' }}>No wins yet</div>
                 )}
               </div>
             ))}
@@ -864,15 +1035,10 @@ const ChessApp = () => {
   // DIFFICULTY
   if (screenMode === 'game' && gameMode === 'difficulty') {
     return (
-      <div style={{
-        minHeight: '100vh',
-        padding: '40px 20px',
-        backgroundColor: '#0a0a0a',
-        color: '#fff'
-      }}>
+      <div style={containerStyle}>
         <div style={{ maxWidth: '400px', margin: '0 auto' }}>
-          <button onClick={() => setScreenMode('menu')} style={{ marginBottom: '20px', padding: '10px 20px', backgroundColor: '#555', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>← BACK</button>
-          <h2 style={{ textAlign: 'center', marginBottom: '30px' }}>Select Difficulty</h2>
+          <button onClick={() => setScreenMode('menu')} style={{ marginBottom: '20px', padding: '8px 15px', backgroundColor: '#555', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', fontSize: isMobile ? '12px' : '14px' }}>← BACK</button>
+          <h2 style={{ textAlign: 'center', marginBottom: '30px', fontSize: isMobile ? '20px' : '24px' }}>Select Difficulty</h2>
           {['easy', 'medium', 'hard'].map(level => (
             <button key={level} onClick={() => {
               setDifficulty(level);
@@ -886,7 +1052,7 @@ const ChessApp = () => {
               setCastlingRights({ white: { kingside: true, queenside: true }, black: { kingside: true, queenside: true } });
               setCapturedPieces({ white: [], black: [] });
               setGameMode('playing');
-            }} style={{ width: '100%', padding: '15px', backgroundColor: level === 'easy' ? '#3498db' : level === 'medium' ? '#f39c12' : '#e74c3c', color: 'white', border: 'none', borderRadius: '8px', marginBottom: '10px', fontSize: '16px', fontWeight: 'bold', cursor: 'pointer' }}>
+            }} style={buttonStyle(level === 'easy' ? '#3498db' : level === 'medium' ? '#f39c12' : '#e74c3c')}>
               {level === 'easy' && '⭐ EASY'} {level === 'medium' && '⭐⭐ MEDIUM'} {level === 'hard' && '⭐⭐⭐ HARD'}
             </button>
           ))}
@@ -898,32 +1064,27 @@ const ChessApp = () => {
   // GAME
   if (screenMode === 'game' && gameMode === 'playing') {
     return (
-      <div style={{
-        minHeight: '100vh',
-        padding: '20px',
-        backgroundColor: '#0a0a0a',
-        color: '#fff'
-      }}>
-        <div style={{ maxWidth: '1000px', margin: '0 auto' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-            <button onClick={() => setScreenMode('menu')} style={{ padding: '10px 20px', backgroundColor: '#555', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold' }}>← HOME</button>
-            <h2 style={{ color: '#f39c12', margin: '0' }}>VS AI - {difficulty.toUpperCase()}</h2>
+      <div style={{ ...containerStyle, padding: isMobile ? '15px' : '20px' }}>
+        <div style={{ maxWidth: isMobile ? '100%' : '1000px', margin: '0 auto' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px', gap: '10px' }}>
+            <button onClick={() => setScreenMode('menu')} style={{ padding: isMobile ? '8px 12px' : '10px 20px', backgroundColor: '#555', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold', fontSize: isMobile ? '12px' : '14px' }}>← HOME</button>
+            <h2 style={{ color: '#f39c12', margin: '0', fontSize: isMobile ? '16px' : '18px' }}>VS AI</h2>
           </div>
 
           {renderGameInfo()}
 
-          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '20px' }}>
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '15px', overflowX: 'auto' }}>
             {renderBoard()}
           </div>
 
           {gameStatus !== 'ongoing' && (
             <div style={{
-              padding: '20px',
+              padding: '15px',
               backgroundColor: gameStatus === 'white_wins' ? '#27ae60' : '#e74c3c',
-              borderRadius: '8px',
+              borderRadius: '6px',
               textAlign: 'center',
-              marginBottom: '20px',
-              fontSize: '24px',
+              marginBottom: '15px',
+              fontSize: isMobile ? '18px' : '24px',
               fontWeight: 'bold'
             }}>
               {gameStatus === 'white_wins' && '🎉 YOU WIN! 🎉'}
@@ -942,12 +1103,12 @@ const ChessApp = () => {
             setLastMove(null);
             setCastlingRights({ white: { kingside: true, queenside: true }, black: { kingside: true, queenside: true } });
             setCapturedPieces({ white: [], black: [] });
-          }} style={{ width: '100%', padding: '15px', backgroundColor: '#f39c12', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold', fontSize: '16px', marginBottom: '20px' }}>↻ NEW GAME</button>
+          }} style={buttonStyle('#f39c12')}>↻ NEW GAME</button>
 
-          <div style={{ backgroundColor: '#1a1a2e', padding: '15px', borderRadius: '8px' }}>
-            <h3 style={{ marginTop: '0', color: '#f39c12' }}>Moves ({moveHistory.length})</h3>
+          <div style={{ backgroundColor: '#1a1a2e', padding: '12px', borderRadius: '6px', maxHeight: '200px', overflowY: 'auto' }}>
+            <h3 style={{ marginTop: '0', color: '#f39c12', fontSize: isMobile ? '13px' : '14px' }}>Moves ({moveHistory.length})</h3>
             {moveHistory.length > 0 ? (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', fontSize: '13px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: isMobile ? '12px' : '13px' }}>
                 {moveHistory.map((move, i) => (
                   <div key={i} style={{ color: '#ddd' }}>
                     {i % 2 === 0 && <span style={{ color: '#f39c12' }}>{Math.floor(i / 2) + 1}.</span>} {move}
@@ -955,7 +1116,7 @@ const ChessApp = () => {
                 ))}
               </div>
             ) : (
-              <p style={{ color: '#666' }}>No moves yet</p>
+              <p style={{ color: '#666', fontSize: '12px' }}>No moves yet</p>
             )}
           </div>
         </div>
