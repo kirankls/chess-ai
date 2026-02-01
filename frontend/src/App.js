@@ -1,13 +1,32 @@
 import React, { useState, useEffect, useRef } from 'react';
 
 const ChessApp = () => {
-  // Authentication
+  // Add mobile viewport detection
+  const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' && window.innerWidth < 768);
+  
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+  // Authentication state
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [currentPlayer, setCurrentPlayerInfo] = useState(null);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [email, setEmail] = useState('');
   const [isRegistering, setIsRegistering] = useState(false);
+  const [accounts, setAccounts] = useState(() => {
+    try {
+      const saved = localStorage.getItem('chessAccounts');
+      return saved ? JSON.parse(saved) : {};
+    } catch (e) {
+      return {};
+    }
+  });
+  const [loginError, setLoginError] = useState('');
 
   // Navigation
   const [screenMode, setScreenMode] = useState('menu');
@@ -35,8 +54,96 @@ const ChessApp = () => {
   const [leaderboard, setLeaderboard] = useState({ easy: [], medium: [], hard: [] });
   const [capturedPieces, setCapturedPieces] = useState({ white: [], black: [] });
   const [trainingTopic, setTrainingTopic] = useState(null);
+  
+  // Mobile responsive detection
+  const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' && window.innerWidth < 768);
+  
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
-  const trainingLessons = {
+  // Save accounts to localStorage
+  const saveAccounts = (newAccounts) => {
+    try {
+      localStorage.setItem('chessAccounts', JSON.stringify(newAccounts));
+      setAccounts(newAccounts);
+    } catch (e) {
+      console.log('Error saving accounts:', e);
+    }
+  };
+
+  // Handle account creation
+  const handleRegister = () => {
+    setLoginError('');
+    
+    if (!username || !password || !email) {
+      setLoginError('All fields are required');
+      return;
+    }
+    if (username.length < 3) {
+      setLoginError('Username must be at least 3 characters');
+      return;
+    }
+    if (password.length < 4) {
+      setLoginError('Password must be at least 4 characters');
+      return;
+    }
+    if (!email.includes('@')) {
+      setLoginError('Please enter a valid email');
+      return;
+    }
+    if (accounts[username]) {
+      setLoginError('Username already exists');
+      return;
+    }
+
+    // Create new account
+    const newAccounts = {
+      ...accounts,
+      [username]: { password, email }
+    };
+    saveAccounts(newAccounts);
+    
+    // Auto login after registration
+    setIsLoggedIn(true);
+    setCurrentPlayerInfo({ username, email });
+    setUsername('');
+    setPassword('');
+    setEmail('');
+    setIsRegistering(false);
+  };
+
+  // Handle login
+  const handleLogin = () => {
+    setLoginError('');
+    
+    if (!username || !password) {
+      setLoginError('Please enter username and password');
+      return;
+    }
+    
+    const account = accounts[username];
+    if (!account) {
+      setLoginError('Username not found');
+      return;
+    }
+    
+    if (account.password !== password) {
+      setLoginError('Incorrect password');
+      return;
+    }
+
+    // Login successful
+    setIsLoggedIn(true);
+    setCurrentPlayerInfo({ username, email: account.email });
+    setUsername('');
+    setPassword('');
+    setEmail('');
+  };
     'piece-movements': {
       title: '♞ Piece Movements',
       description: 'Learn how each piece moves',
@@ -581,15 +688,115 @@ const ChessApp = () => {
 
   const renderBoard = () => {
     const files = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
+    // Responsive sizing
+    const squareSize = isMobile ? 32 : 70;
+    const pawnFontSize = isMobile ? 18 : 40;
+    const pieceFontSize = isMobile ? 22 : 50;
+    const padding = isMobile ? 3 : 10;
+    const labelSize = isMobile ? 9 : 12;
+    
     return (
       <div style={{
         display: 'inline-block',
-        padding: '10px',
+        padding: padding,
         backgroundColor: '#8b7355',
         borderRadius: '8px',
         boxShadow: '0 0 20px rgba(0,0,0,0.5)',
-        border: '3px solid #5a4a3a'
+        border: isMobile ? '2px solid #5a4a3a' : '3px solid #5a4a3a',
+        overflowX: 'auto'
       }}>
+        {/* File labels (a-h) */}
+        <div style={{ display: 'flex', marginLeft: isMobile ? '17px' : '30px', marginBottom: '2px' }}>
+          {files.map((file, i) => (
+            <div key={`file-${i}`} style={{ width: squareSize, textAlign: 'center', color: '#333', fontWeight: 'bold', fontSize: labelSize }}>
+              {isMobile ? file : file}
+            </div>
+          ))}
+        </div>
+
+        {/* Board rows */}
+        {board.map((row, r) => (
+          <div key={r} style={{ display: 'flex' }}>
+            {/* Rank label (8-1) */}
+            <div style={{ width: isMobile ? '16px' : '25px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#333', fontWeight: 'bold', fontSize: labelSize, minWidth: isMobile ? '16px' : '25px' }}>
+              {8 - r}
+            </div>
+
+            {/* Board squares */}
+            {row.map((piece, c) => {
+              const isSelected = selectedSquare && selectedSquare[0] === r && selectedSquare[1] === c;
+              const isLegal = legalMoves.some(m => m[0] === r && m[1] === c);
+              const isLight = (r + c) % 2 === 0;
+              const isLastMoveSource = lastMove && lastMove.from[0] === r && lastMove.from[1] === c;
+              const isLastMoveDest = lastMove && lastMove.to[0] === r && lastMove.to[1] === c;
+
+              let backgroundColor;
+              if (isLastMoveSource) {
+                backgroundColor = '#FFF8DC';
+              } else if (isLastMoveDest) {
+                backgroundColor = '#FFFFCC';
+              } else if (isSelected) {
+                backgroundColor = '#FF6B6B';
+              } else if (isLegal) {
+                backgroundColor = '#FFE66D';
+              } else {
+                backgroundColor = isLight ? '#f0d9b5' : '#b58863';
+              }
+
+              let pieceColor = '#1a1a1a';
+              let textOutline = 'none';
+
+              if (piece && piece.color === 'white') {
+                pieceColor = '#FFFF00';
+                textOutline = '-1px -1px 0px #000000, 1px -1px 0px #000000, -1px 1px 0px #000000, 1px 1px 0px #000000';
+              }
+
+              return (
+                <div
+                  key={`${r}-${c}`}
+                  draggable={piece && piece.color === 'white' && gameStatus === 'ongoing' && currentTurn === 'white' && !aiThinking}
+                  onDragStart={(e) => handleDragStart(e, r, c)}
+                  onDragOver={handleDragOver}
+                  onDrop={(e) => handleDrop(e, r, c)}
+                  onDragEnd={handleDragEnd}
+                  onClick={() => handleSquareClick(r, c)}
+                  style={{
+                    width: squareSize,
+                    height: squareSize,
+                    minWidth: squareSize,
+                    minHeight: squareSize,
+                    padding: '0',
+                    border: 'none',
+                    backgroundColor: backgroundColor,
+                    cursor: (piece && piece.color === 'white' && gameStatus === 'ongoing' && currentTurn === 'white' && !aiThinking) 
+                      ? 'grab' 
+                      : 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: piece && piece.type === 'pawn' ? pawnFontSize : pieceFontSize,
+                    fontWeight: 'bold',
+                    textShadow: textOutline,
+                    color: pieceColor,
+                    transition: 'background-color 0.08s linear',
+                    lineHeight: '1',
+                    position: 'relative',
+                    filter: 'none',
+                    fontFamily: 'Arial, sans-serif',
+                    touchAction: 'none',
+                    WebkitUserSelect: 'none',
+                    userSelect: 'none'
+                  }}
+                >
+                  {piece && getPieceSymbol(piece.type, piece.color)}
+                </div>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+    );
+  };
         {/* File labels (a-h) */}
         <div style={{ display: 'flex', marginLeft: '30px', marginBottom: '3px' }}>
           {files.map((file, i) => (
@@ -633,9 +840,9 @@ const ChessApp = () => {
               let textOutline = 'none';
 
               if (piece && piece.color === 'white') {
-                // White pieces: BRIGHT YELLOW for maximum visibility
-                pieceColor = '#FFFF00';  // Bright yellow - SUPER visible!
-                textOutline = '-1px -1px 0px #000000, 1px -1px 0px #000000, -1px 1px 0px #000000, 1px 1px 0px #000000';
+                // White pieces: PURE WHITE
+                pieceColor = '#FFFFFF';  // Pure bright white
+                textOutline = '1px 1px 0px #000000, -1px -1px 0px #000000, 1px -1px 0px #000000, -1px 1px 0px #000000';
               }
 
               return (
@@ -707,15 +914,18 @@ const ChessApp = () => {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: '#0a0a0a'
+        backgroundColor: '#0a0a0a',
+        padding: isMobile ? '20px' : '0'
       }}>
         <div style={{
           backgroundColor: '#1a1a2e',
-          padding: '40px',
+          padding: isMobile ? '30px 20px' : '40px',
           borderRadius: '10px',
-          textAlign: 'center'
+          textAlign: 'center',
+          width: '100%',
+          maxWidth: isMobile ? '100%' : '400px'
         }}>
-          <h1 style={{ color: '#f39c12', marginBottom: '30px', fontSize: '36px' }}>♔ CHESS MASTER</h1>
+          <h1 style={{ color: '#f39c12', marginBottom: '30px', fontSize: isMobile ? '28px' : '36px' }}>♔ CHESS MASTER</h1>
           <input
             type="text"
             placeholder="Username"
@@ -766,11 +976,21 @@ const ChessApp = () => {
               boxSizing: 'border-box'
             }}
           />
+          {loginError && (
+            <div style={{
+              backgroundColor: '#e74c3c',
+              color: 'white',
+              padding: '10px',
+              borderRadius: '5px',
+              marginBottom: '15px',
+              fontSize: '14px'
+            }}>
+              {loginError}
+            </div>
+          )}
+
           <button
-            onClick={() => {
-              setIsLoggedIn(true);
-              setCurrentPlayerInfo({ username });
-            }}
+            onClick={() => isRegistering ? handleRegister() : handleLogin()}
             style={{
               width: '100%',
               padding: '12px',
@@ -783,14 +1003,20 @@ const ChessApp = () => {
               marginBottom: '10px'
             }}
           >
-            {isRegistering ? 'REGISTER' : 'LOGIN'}
+            {isRegistering ? 'CREATE ACCOUNT' : 'LOGIN'}
           </button>
           <button
-            onClick={() => setIsRegistering(!isRegistering)}
+            onClick={() => {
+              setIsRegistering(!isRegistering);
+              setLoginError('');
+              setUsername('');
+              setPassword('');
+              setEmail('');
+            }}
             style={{
               width: '100%',
               padding: '12px',
-              backgroundColor: '#555',
+              backgroundColor: '#3498db',
               color: 'white',
               border: 'none',
               borderRadius: '5px',
@@ -935,19 +1161,20 @@ const ChessApp = () => {
     return (
       <div style={{
         minHeight: '100vh',
-        padding: '20px',
+        padding: isMobile ? '10px' : '20px',
         backgroundColor: '#0a0a0a',
-        color: '#fff'
+        color: '#fff',
+        overflowX: 'hidden'
       }}>
-        <div style={{ maxWidth: '1000px', margin: '0 auto' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-            <button onClick={() => setScreenMode('menu')} style={{ padding: '10px 20px', backgroundColor: '#555', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold' }}>← HOME</button>
-            <h2 style={{ color: '#f39c12', margin: '0' }}>VS AI - {difficulty.toUpperCase()}</h2>
+        <div style={{ maxWidth: isMobile ? '100%' : '1000px', margin: '0 auto' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: isMobile ? '10px' : '20px', flexWrap: 'wrap', gap: '10px' }}>
+            <button onClick={() => setScreenMode('menu')} style={{ padding: isMobile ? '8px 12px' : '10px 20px', backgroundColor: '#555', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold', fontSize: isMobile ? '12px' : '14px' }}>← HOME</button>
+            <h2 style={{ color: '#f39c12', margin: '0', fontSize: isMobile ? '14px' : '18px' }}>VS AI - {difficulty.toUpperCase()}</h2>
           </div>
 
           {renderGameInfo()}
 
-          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '20px' }}>
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: isMobile ? '10px' : '20px', overflowX: 'auto' }}>
             {renderBoard()}
           </div>
 
