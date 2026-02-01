@@ -132,7 +132,7 @@ const ChessApp = () => {
   // Load leaderboard
   async function loadLeaderboard() {
     try {
-      const data = await AsyncStorage?.getItem?.('chessLeaderboard') || localStorage.getItem('chessLeaderboard');
+      const data = localStorage.getItem('chessLeaderboard');
       if (data) {
         setLeaderboard(JSON.parse(data));
       }
