@@ -477,8 +477,8 @@ const ChessApp = () => {
     let bestMove = null;
     let bestValue = -Infinity;
     
-    // FASTER: Reduced depth for speed
-    const depths = { easy: 1, medium: 2, hard: 2 };
+    // ULTIMATE HARD MODE: Maximum depth with speed optimizations
+    const depths = { easy: 1, medium: 2, hard: 5 };
     const maxDepth = depths[difficulty];
 
     let moves = [];
@@ -495,11 +495,33 @@ const ChessApp = () => {
       }
     }
 
-    // Sort by score (best first)
+    // Sort by score (best first) - CRITICAL for speed
     moves.sort((a, b) => b.score - a.score);
 
-    // FASTER: Evaluate fewer moves
-    const limit = difficulty === 'easy' ? 4 : difficulty === 'medium' ? 8 : 12;
+    // Limit moves to evaluate - quality-based filtering for hard mode
+    let limit;
+    if (difficulty === 'easy') {
+      limit = 8;
+    } else if (difficulty === 'medium') {
+      limit = 12;
+    } else { // hard mode - quality threshold
+      // Only evaluate moves within 70% of the best move's score
+      // This filters out obviously inferior moves while keeping all decent ones
+      const bestScore = moves[0]?.score || 0;
+      const threshold = bestScore * 0.7;
+      
+      let qualityMoves = [];
+      for (let move of moves) {
+        if (move.score >= threshold) {
+          qualityMoves.push(move);
+        }
+        if (qualityMoves.length >= 30) break; // Cap at 30 moves maximum
+      }
+      
+      // Always evaluate at least top 15 moves
+      limit = Math.max(15, qualityMoves.length);
+      moves = qualityMoves.concat(moves.slice(qualityMoves.length)).slice(0, limit);
+    }
 
     for (let i = 0; i < Math.min(limit, moves.length); i++) {
       const moveObj = moves[i];
@@ -571,8 +593,9 @@ const ChessApp = () => {
       return evaluatePosition(boardState);
     }
 
-    if (isCheckmate(boardState, 'white')) return 50000 + depth;
-    if (isCheckmate(boardState, 'black')) return -50000 - depth;
+    // Early checkmate detection
+    if (isCheckmate(boardState, 'white')) return 50000 + (maxDepth - depth) * 100;
+    if (isCheckmate(boardState, 'black')) return -50000 - (maxDepth - depth) * 100;
 
     const color = isMaximizing ? 'black' : 'white';
     let bestValue = isMaximizing ? -Infinity : Infinity;
@@ -593,9 +616,14 @@ const ChessApp = () => {
       }
     }
 
+    // Sort moves by score - CRITICAL for pruning efficiency
     moves.sort((a, b) => b.score - a.score);
 
-    for (let moveObj of moves) {
+    // Limit moves to evaluate at deeper levels
+    const moveLimit = depth >= 3 ? 10 : depth >= 2 ? 15 : 20;
+
+    for (let i = 0; i < Math.min(moveLimit, moves.length); i++) {
+      const moveObj = moves[i];
       const newBoard = boardState.map(r => [...r]);
       const piece = newBoard[moveObj.from[0]][moveObj.from[1]];
       newBoard[moveObj.to[0]][moveObj.to[1]] = piece;
@@ -611,6 +639,7 @@ const ChessApp = () => {
         beta = Math.min(beta, value);
       }
 
+      // Alpha-beta pruning - stops evaluating worse branches
       if (beta <= alpha) break;
     }
 
