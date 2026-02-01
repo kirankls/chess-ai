@@ -377,7 +377,11 @@ const ChessApp = () => {
     return true;
   }
 
-  // Handle square click
+  // Drag and drop state
+  const [draggedPiece, setDraggedPiece] = useState(null);
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+
+  // Handle square click (for fallback click-to-move)
   const handleSquareClick = (row, col) => {
     if (gameStatus !== 'ongoing' || currentTurn !== 'white' || aiThinking) return;
 
@@ -385,7 +389,11 @@ const ChessApp = () => {
 
     if (piece && piece.color === 'white') {
       setSelectedSquare([row, col]);
-      setLegalMoves(getLegalMoves(board, row, col));
+      const moves = getLegalMoves(board, row, col);
+      // Only show legal moves in Easy and Medium, not in Hard
+      if (difficulty !== 'hard') {
+        setLegalMoves(moves);
+      }
       return;
     }
 
@@ -399,6 +407,67 @@ const ChessApp = () => {
       }
     }
 
+    setSelectedSquare(null);
+    setLegalMoves([]);
+  };
+
+  // Handle drag start
+  const handleDragStart = (e, row, col) => {
+    if (gameStatus !== 'ongoing' || currentTurn !== 'white' || aiThinking) return;
+
+    const piece = board[row][col];
+    if (!piece || piece.color !== 'white') return;
+
+    const legalMoves = getLegalMoves(board, row, col);
+    setSelectedSquare([row, col]);
+    // Only show legal moves in Easy and Medium, not in Hard
+    if (difficulty !== 'hard') {
+      setLegalMoves(legalMoves);
+    }
+    setDraggedPiece({ row, col, piece });
+    
+    // Set drag image
+    const dragImage = new Image();
+    dragImage.src = 'data:image/gif;base64,R0lGODlhAQABAAAAACw=';
+    e.dataTransfer.setDragImage(dragImage, 0, 0);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  // Handle drag over
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  };
+
+  // Handle drop
+  const handleDrop = (e, toRow, toCol) => {
+    e.preventDefault();
+    
+    if (!draggedPiece || !selectedSquare) {
+      setDraggedPiece(null);
+      setSelectedSquare(null);
+      setLegalMoves([]);
+      return;
+    }
+
+    const fromRow = draggedPiece.row;
+    const fromCol = draggedPiece.col;
+
+    const legalMovesForSelected = getLegalMoves(board, fromRow, fromCol);
+    const isLegalMove = legalMovesForSelected.some(move => move[0] === toRow && move[1] === toCol);
+
+    if (isLegalMove) {
+      makeMove(fromRow, fromCol, toRow, toCol);
+    }
+
+    setDraggedPiece(null);
+    setSelectedSquare(null);
+    setLegalMoves([]);
+  };
+
+  // Handle drag end
+  const handleDragEnd = () => {
+    setDraggedPiece(null);
     setSelectedSquare(null);
     setLegalMoves([]);
   };
@@ -704,7 +773,8 @@ const ChessApp = () => {
         padding: '10px',
         backgroundColor: '#8b7355',
         borderRadius: '8px',
-        boxShadow: '0 0 20px rgba(0,0,0,0.5)'
+        boxShadow: '0 0 20px rgba(0,0,0,0.5)',
+        userSelect: 'none'
       }}>
         {board.map((row, r) => (
           <div key={r} style={{ display: 'flex' }}>
@@ -730,16 +800,23 @@ const ChessApp = () => {
               }
 
               return (
-                <button
+                <div
                   key={`${r}-${c}`}
+                  draggable={piece && piece.color === 'white' && gameStatus === 'ongoing' && currentTurn === 'white' && !aiThinking}
+                  onDragStart={(e) => handleDragStart(e, r, c)}
+                  onDragOver={handleDragOver}
+                  onDrop={(e) => handleDrop(e, r, c)}
+                  onDragEnd={handleDragEnd}
                   onClick={() => handleSquareClick(r, c)}
                   style={{
                     width: '70px',
                     height: '70px',
                     padding: '0',
-                    border: 'none',
+                    border: isLegal ? '2px solid #2ecc71' : 'none',
                     backgroundColor: backgroundColor,
-                    cursor: currentTurn === 'white' && gameStatus === 'ongoing' ? 'pointer' : 'default',
+                    cursor: (piece && piece.color === 'white' && gameStatus === 'ongoing' && currentTurn === 'white' && !aiThinking) 
+                      ? 'grab' 
+                      : 'default',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
@@ -748,11 +825,13 @@ const ChessApp = () => {
                     textShadow: piece?.color === 'white' 
                       ? '0 0 5px rgba(0,0,0,0.9), 2px 2px 4px rgba(0,0,0,0.8)' 
                       : '0 0 3px rgba(255,255,255,0.8)',
-                    color: piece?.color === 'white' ? '#FFFACD' : '#1a1a1a'
+                    color: piece?.color === 'white' ? '#FFFACD' : '#1a1a1a',
+                    transition: 'background-color 0.2s',
+                    opacity: draggedPiece && draggedPiece.row === r && draggedPiece.col === c ? 0.5 : 1
                   }}
                 >
                   {piece && getPieceSymbol(piece.type, piece.color)}
-                </button>
+                </div>
               );
             })}
           </div>
