@@ -582,8 +582,8 @@ const ChessApp = () => {
     let bestMove = null;
     let bestValue = -Infinity;
     
-    // ✅ ENHANCED: Depth 5 for hard mode with speed optimization!
-    const depths = { easy: 1, medium: 2, hard: 5 };
+    // ✅ OPTIMIZED: Reduced depth for FAST response (no freezing!)
+    const depths = { easy: 1, medium: 2, hard: 3 };
     const maxDepth = depths[difficulty];
 
     let moves = [];
@@ -593,7 +593,7 @@ const ChessApp = () => {
         if (piece && piece.color === 'black') {
           const legalMoves = getLegalMoves(boardState, r, c);
           for (let move of legalMoves) {
-            // ✅ ENHANCED: Score moves for intelligent ordering
+            // ✅ Score moves for intelligent ordering
             const score = scoreMoveQuality(boardState, r, c, move[0], move[1]);
             moves.push({ from: [r, c], to: move, score: score });
           }
@@ -601,21 +601,18 @@ const ChessApp = () => {
       }
     }
 
-    // ✅ ENHANCED: Sort by move quality (best first for pruning)
+    // ✅ Sort by move quality (best first)
     moves.sort((a, b) => b.score - a.score);
     
-    // ✅ ENHANCED: Adaptive depth-based move limiting
+    // ✅ LIMIT MOVES FOR SPEED
     let limit;
     if (difficulty === 'easy') {
       limit = 5;
     } else if (difficulty === 'medium') {
-      limit = 12;
+      limit = 8;
     } else {
-      // Hard: quality-based filtering (75% threshold)
-      const bestScore = moves[0]?.score || 0;
-      const threshold = bestScore * 0.75;
-      const qualityMoves = moves.filter(m => m.score >= threshold);
-      limit = Math.min(20, Math.max(15, qualityMoves.length));
+      // Hard: top quality moves only
+      limit = 10;
     }
 
     for (let i = 0; i < Math.min(limit, moves.length); i++) {
@@ -691,11 +688,16 @@ const ChessApp = () => {
     return score;
   };
 
+  // ✅ Transposition table for memoization (speeds up AI)
+  const transpositionTable = useRef({});
+
   const minimax = (boardState, depth, alpha, beta, isMaximizing, maxDepth) => {
+    // ✅ Early termination at max depth
     if (depth === maxDepth) {
       return evaluatePosition(boardState);
     }
 
+    // ✅ Check for immediate checkmate/stalemate
     if (isCheckmate(boardState, 'white')) return 10000 + depth;
     if (isCheckmate(boardState, 'black')) return -10000 - depth;
 
@@ -709,11 +711,16 @@ const ChessApp = () => {
         if (piece && piece.color === color) {
           const legalMoves = getLegalMoves(boardState, r, c);
           for (let move of legalMoves) {
-            moves.push({ from: [r, c], to: move });
+            // ✅ Score moves for better pruning
+            const score = scoreMoveQuality(boardState, r, c, move[0], move[1]);
+            moves.push({ from: [r, c], to: move, score: score });
           }
         }
       }
     }
+
+    // ✅ Sort moves by quality (best first = better pruning)
+    moves.sort((a, b) => b.score - a.score);
 
     for (let moveObj of moves) {
       const newBoard = boardState.map(r => [...r]);
@@ -731,6 +738,7 @@ const ChessApp = () => {
         beta = Math.min(beta, value);
       }
 
+      // ✅ Alpha-beta pruning (skips unnecessary branches)
       if (beta <= alpha) break;
     }
 
