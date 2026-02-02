@@ -47,6 +47,10 @@ const ChessApp = () => {
   const [capturedPieces, setCapturedPieces] = useState({ white: [], black: [] });
   const [trainingTopic, setTrainingTopic] = useState(null);
 
+  // ✅ PAWN PROMOTION STATE
+  const [promotionPending, setPromotionPending] = useState(null);
+  const [promotionColor, setPromotionColor] = useState(null);
+
   const trainingLessons = {
     'piece-movements': {
       title: '♞ Piece Movements',
@@ -522,11 +526,36 @@ const ChessApp = () => {
     setMoveHistory([...moveHistory, moveNotation]);
     setSelectedSquare(null);
     setLegalMoves([]);
+
+    // ✅ CHECK FOR PAWN PROMOTION
+    if (piece.type === 'pawn' && ((piece.color === 'white' && toRow === 0) || (piece.color === 'black' && toRow === 7))) {
+      setPromotionPending([toRow, toCol]);
+      setPromotionColor(piece.color);
+      return;  // Don't continue until promotion is chosen
+    }
+
     setCurrentTurn('black');
 
     // ✅ Add 1 second delay before AI plays
     setTimeout(() => {
       makeAIMove(newBoard, [...moveHistory, moveNotation]);
+    }, 1000);
+  };
+
+  // ✅ HANDLE PAWN PROMOTION
+  const handlePromotion = (newPieceType) => {
+    const newBoard = board.map(r => [...r]);
+    const [row, col] = promotionPending;
+    newBoard[row][col].type = newPieceType;
+
+    setBoard(newBoard);
+    setPromotionPending(null);
+    setPromotionColor(null);
+    setCurrentTurn('black');
+
+    // ✅ Add 1 second delay before AI plays
+    setTimeout(() => {
+      makeAIMove(newBoard, moveHistory);
     }, 1000);
   };
 
@@ -555,6 +584,11 @@ const ChessApp = () => {
         const newRights = { ...castlingRights };
         newRights[piece.color] = { kingside: false, queenside: false };
         setCastlingRights(newRights);
+      }
+
+      // ✅ AUTO-PROMOTE AI PAWNS TO QUEEN
+      if (piece.type === 'pawn' && bestMove.to[0] === 7) {
+        newBoard[bestMove.to[0]][bestMove.to[1]].type = 'queen';
       }
 
       const moveNotation = `${String.fromCharCode(97 + bestMove.from[1])}${8 - bestMove.from[0]}-${String.fromCharCode(97 + bestMove.to[1])}${8 - bestMove.to[0]}`;
@@ -932,6 +966,100 @@ const ChessApp = () => {
           >
             {isRegistering ? '← BACK TO LOGIN' : '+ CREATE NEW ACCOUNT'}
           </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ✅ PAWN PROMOTION MODAL
+  if (promotionPending) {
+    return (
+      <div style={{
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: 'rgba(0,0,0,0.8)',
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        zIndex: 1000
+      }}>
+        <div style={{
+          backgroundColor: '#1a1a2e',
+          padding: '40px',
+          borderRadius: '10px',
+          textAlign: 'center',
+          maxWidth: '400px'
+        }}>
+          <h2 style={{ color: '#f39c12', marginBottom: '20px' }}>♟ PAWN PROMOTION</h2>
+          <p style={{ color: '#aaa', marginBottom: '30px' }}>Choose what to promote your pawn to:</p>
+          
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
+            <button
+              onClick={() => handlePromotion('queen')}
+              style={{
+                padding: '20px',
+                backgroundColor: '#f39c12',
+                color: 'white',
+                border: 'none',
+                borderRadius: '8px',
+                fontSize: '24px',
+                fontWeight: 'bold',
+                cursor: 'pointer'
+              }}
+            >
+              ♕ Queen
+            </button>
+            <button
+              onClick={() => handlePromotion('rook')}
+              style={{
+                padding: '20px',
+                backgroundColor: '#3498db',
+                color: 'white',
+                border: 'none',
+                borderRadius: '8px',
+                fontSize: '24px',
+                fontWeight: 'bold',
+                cursor: 'pointer'
+              }}
+            >
+              ♖ Rook
+            </button>
+            <button
+              onClick={() => handlePromotion('bishop')}
+              style={{
+                padding: '20px',
+                backgroundColor: '#2ecc71',
+                color: 'white',
+                border: 'none',
+                borderRadius: '8px',
+                fontSize: '24px',
+                fontWeight: 'bold',
+                cursor: 'pointer'
+              }}
+            >
+              ♗ Bishop
+            </button>
+            <button
+              onClick={() => handlePromotion('knight')}
+              style={{
+                padding: '20px',
+                backgroundColor: '#e74c3c',
+                color: 'white',
+                border: 'none',
+                borderRadius: '8px',
+                fontSize: '24px',
+                fontWeight: 'bold',
+                cursor: 'pointer'
+              }}
+            >
+              ♘ Knight
+            </button>
+          </div>
+          <p style={{ color: '#666', marginTop: '20px', fontSize: '12px' }}>Queen is usually the best choice!</p>
         </div>
       </div>
     );
