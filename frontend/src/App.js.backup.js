@@ -8,6 +8,17 @@ const ChessApp = () => {
   const [password, setPassword] = useState('');
   const [email, setEmail] = useState('');
   const [isRegistering, setIsRegistering] = useState(false);
+  const [loginError, setLoginError] = useState('');
+  
+  // ✅ Account storage in localStorage
+  const [accounts, setAccounts] = useState(() => {
+    try {
+      const saved = localStorage.getItem('chessAccounts');
+      return saved ? JSON.parse(saved) : {};
+    } catch (e) {
+      return {};
+    }
+  });
 
   // Navigation
   const [screenMode, setScreenMode] = useState('menu');
@@ -67,6 +78,92 @@ const ChessApp = () => {
   useEffect(() => {
     loadLeaderboard();
   }, []);
+
+  // ✅ SAVE ACCOUNTS TO LOCALSTORAGE
+  const saveAccounts = (newAccounts) => {
+    try {
+      localStorage.setItem('chessAccounts', JSON.stringify(newAccounts));
+      setAccounts(newAccounts);
+    } catch (e) {
+      console.log('Error saving accounts:', e);
+    }
+  };
+
+  // ✅ HANDLE REGISTRATION
+  const handleRegister = () => {
+    setLoginError('');
+
+    if (!username || !password || !email) {
+      setLoginError('All fields are required');
+      return;
+    }
+    if (username.length < 3) {
+      setLoginError('Username must be at least 3 characters');
+      return;
+    }
+    if (password.length < 4) {
+      setLoginError('Password must be at least 4 characters');
+      return;
+    }
+    if (!email.includes('@')) {
+      setLoginError('Please enter a valid email');
+      return;
+    }
+    if (accounts[username]) {
+      setLoginError('Username already exists');
+      return;
+    }
+
+    const newAccounts = {
+      ...accounts,
+      [username]: { password, email, createdAt: new Date().toISOString() }
+    };
+    saveAccounts(newAccounts);
+
+    setIsLoggedIn(true);
+    setCurrentPlayerInfo({ username, email });
+    setUsername('');
+    setPassword('');
+    setEmail('');
+    setIsRegistering(false);
+  };
+
+  // ✅ HANDLE LOGIN
+  const handleLogin = () => {
+    setLoginError('');
+
+    if (!username || !password) {
+      setLoginError('Please enter username and password');
+      return;
+    }
+
+    const account = accounts[username];
+    if (!account) {
+      setLoginError('Username not found');
+      return;
+    }
+
+    if (account.password !== password) {
+      setLoginError('Incorrect password');
+      return;
+    }
+
+    setIsLoggedIn(true);
+    setCurrentPlayerInfo({ username, email: account.email });
+    setUsername('');
+    setPassword('');
+  };
+
+  // ✅ HANDLE LOGOUT
+  const handleLogout = () => {
+    setIsLoggedIn(false);
+    setCurrentPlayerInfo(null);
+    setUsername('');
+    setPassword('');
+    setEmail('');
+    setIsRegistering(false);
+    setLoginError('');
+  };
 
   function initializeBoard() {
     const board = Array(8).fill(null).map(() => Array(8).fill(null));
@@ -633,8 +730,8 @@ const ChessApp = () => {
               let textOutline = 'none';
 
               if (piece && piece.color === 'white') {
-                // White pieces: BRIGHT YELLOW for maximum visibility
-                pieceColor = '#FFFF00';  // Bright yellow - SUPER visible!
+                // ✅ White pieces: SOLID WHITE with black outline
+                pieceColor = '#FFFFFF';  // Solid white!
                 textOutline = '-1px -1px 0px #000000, 1px -1px 0px #000000, -1px 1px 0px #000000, 1px 1px 0px #000000';
               }
 
@@ -707,20 +804,28 @@ const ChessApp = () => {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: '#0a0a0a'
+        backgroundColor: '#0a0a0a',
+        padding: '20px'
       }}>
         <div style={{
           backgroundColor: '#1a1a2e',
           padding: '40px',
           borderRadius: '10px',
-          textAlign: 'center'
+          textAlign: 'center',
+          width: '100%',
+          maxWidth: '400px'
         }}>
-          <h1 style={{ color: '#f39c12', marginBottom: '30px', fontSize: '36px' }}>♔ CHESS MASTER</h1>
+          <h1 style={{ color: '#f39c12', marginBottom: '10px', fontSize: '36px' }}>♔ CHESS MASTER</h1>
+          <p style={{ color: '#aaa', marginBottom: '30px', fontSize: '14px' }}>
+            {isRegistering ? 'Create a new account' : 'Login to play'}
+          </p>
+
           <input
             type="text"
             placeholder="Username"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
+            onKeyPress={(e) => e.key === 'Enter' && (isRegistering ? handleRegister() : handleLogin())}
             style={{
               width: '100%',
               padding: '12px',
@@ -729,7 +834,8 @@ const ChessApp = () => {
               border: 'none',
               backgroundColor: '#252541',
               color: '#eee',
-              boxSizing: 'border-box'
+              boxSizing: 'border-box',
+              fontSize: '14px'
             }}
           />
           {isRegistering && (
@@ -738,6 +844,7 @@ const ChessApp = () => {
               placeholder="Email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
+              onKeyPress={(e) => e.key === 'Enter' && handleRegister()}
               style={{
                 width: '100%',
                 padding: '12px',
@@ -746,7 +853,8 @@ const ChessApp = () => {
                 border: 'none',
                 backgroundColor: '#252541',
                 color: '#eee',
-                boxSizing: 'border-box'
+                boxSizing: 'border-box',
+                fontSize: '14px'
               }}
             />
           )}
@@ -755,22 +863,36 @@ const ChessApp = () => {
             placeholder="Password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
+            onKeyPress={(e) => e.key === 'Enter' && (isRegistering ? handleRegister() : handleLogin())}
             style={{
               width: '100%',
               padding: '12px',
-              marginBottom: '20px',
+              marginBottom: '15px',
               borderRadius: '5px',
               border: 'none',
               backgroundColor: '#252541',
               color: '#eee',
-              boxSizing: 'border-box'
+              boxSizing: 'border-box',
+              fontSize: '14px'
             }}
           />
+
+          {loginError && (
+            <div style={{
+              backgroundColor: '#e74c3c',
+              color: 'white',
+              padding: '12px',
+              borderRadius: '5px',
+              marginBottom: '15px',
+              fontSize: '13px',
+              fontWeight: 'bold'
+            }}>
+              ⚠️ {loginError}
+            </div>
+          )}
+
           <button
-            onClick={() => {
-              setIsLoggedIn(true);
-              setCurrentPlayerInfo({ username });
-            }}
+            onClick={() => isRegistering ? handleRegister() : handleLogin()}
             style={{
               width: '100%',
               padding: '12px',
@@ -780,24 +902,33 @@ const ChessApp = () => {
               borderRadius: '5px',
               cursor: 'pointer',
               fontWeight: 'bold',
-              marginBottom: '10px'
+              marginBottom: '10px',
+              fontSize: '16px'
             }}
           >
-            {isRegistering ? 'REGISTER' : 'LOGIN'}
+            {isRegistering ? '📝 CREATE ACCOUNT' : '🔓 LOGIN'}
           </button>
           <button
-            onClick={() => setIsRegistering(!isRegistering)}
+            onClick={() => {
+              setIsRegistering(!isRegistering);
+              setLoginError('');
+              setUsername('');
+              setPassword('');
+              setEmail('');
+            }}
             style={{
               width: '100%',
               padding: '12px',
-              backgroundColor: '#555',
+              backgroundColor: '#3498db',
               color: 'white',
               border: 'none',
               borderRadius: '5px',
-              cursor: 'pointer'
+              cursor: 'pointer',
+              fontWeight: 'bold',
+              fontSize: '14px'
             }}
           >
-            {isRegistering ? 'Back to Login' : 'Create Account'}
+            {isRegistering ? '← BACK TO LOGIN' : '+ CREATE NEW ACCOUNT'}
           </button>
         </div>
       </div>
@@ -814,11 +945,25 @@ const ChessApp = () => {
         color: '#fff'
       }}>
         <div style={{ maxWidth: '800px', margin: '0 auto' }}>
-          <h1 style={{ textAlign: 'center', color: '#f39c12', marginBottom: '40px', fontSize: '48px' }}>♔ CHESS MASTER</h1>
+          <div style={{
+            backgroundColor: '#1a1a2e',
+            padding: '15px',
+            borderRadius: '8px',
+            marginBottom: '30px',
+            textAlign: 'center',
+            borderLeft: '4px solid #f39c12'
+          }}>
+            <p style={{ margin: '0', color: '#aaa', fontSize: '12px' }}>Logged in as</p>
+            <p style={{ margin: '5px 0 0 0', color: '#f39c12', fontSize: '18px', fontWeight: 'bold' }}>
+              👤 {currentPlayer?.username}
+            </p>
+          </div>
+
+          <h1 style={{ textAlign: 'center', color: '#f39c12', marginBottom: '30px', fontSize: '36px' }}>♔ CHESS MASTER</h1>
           <button onClick={() => { setGameMode('difficulty'); setScreenMode('game'); }} style={{ width: '100%', padding: '20px', backgroundColor: '#f39c12', color: 'white', border: 'none', borderRadius: '8px', fontSize: '18px', fontWeight: 'bold', cursor: 'pointer', marginBottom: '15px' }}>⚔️ PLAY vs AI</button>
           <button onClick={() => setScreenMode('training')} style={{ width: '100%', padding: '20px', backgroundColor: '#3498db', color: 'white', border: 'none', borderRadius: '8px', fontSize: '18px', fontWeight: 'bold', cursor: 'pointer', marginBottom: '15px' }}>📚 TRAINING</button>
-          <button onClick={() => setScreenMode('leaderboard')} style={{ width: '100%', padding: '20px', backgroundColor: '#2ecc71', color: 'white', border: 'none', borderRadius: '8px', fontSize: '18px', fontWeight: 'bold', cursor: 'pointer', marginBottom: '15px' }}>🏆 LEADERBOARD</button>
-          <button onClick={() => setIsLoggedIn(false)} style={{ width: '100%', padding: '15px', backgroundColor: '#e74c3c', color: 'white', border: 'none', borderRadius: '8px', fontSize: '16px', fontWeight: 'bold', cursor: 'pointer' }}>LOGOUT</button>
+          <button onClick={() => setScreenMode('leaderboard')} style={{ width: '100%', padding: '20px', backgroundColor: '#2ecc71', color: 'white', border: 'none', borderRadius: '8px', fontSize: '18px', fontWeight: 'bold', cursor: 'pointer', marginBottom: '25px' }}>🏆 LEADERBOARD</button>
+          <button onClick={handleLogout} style={{ width: '100%', padding: '15px', backgroundColor: '#e74c3c', color: 'white', border: 'none', borderRadius: '8px', fontSize: '16px', fontWeight: 'bold', cursor: 'pointer' }}>🔓 LOGOUT</button>
         </div>
       </div>
     );
