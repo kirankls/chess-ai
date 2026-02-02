@@ -728,13 +728,11 @@ const ChessApp = () => {
               // Determine piece color for rendering
               let pieceColor = '#1a1a1a';  // Black pieces dark
               let textOutline = 'none';
-              let textFillColor = 'inherit';
 
               if (piece && piece.color === 'white') {
-                // ✅ White pieces: FILLED with solid white
-                pieceColor = '#FFFFFF';  // Solid white!
-                textFillColor = '#FFFFFF';  // Fill white
-                textOutline = '2px 2px 0px #000000, -2px -2px 0px #000000, 2px -2px 0px #000000, -2px 2px 0px #000000';
+                // ✅ White pieces: OUTLINED like black pieces - white with black outline
+                pieceColor = '#FFFFFF';  // White color
+                textOutline = '1px 1px 0px #000000, -1px -1px 0px #000000, 1px -1px 0px #000000, -1px 1px 0px #000000, 0px 1px 0px #000000, 0px -1px 0px #000000, 1px 0px 0px #000000, -1px 0px 0px #000000';
               }
 
               return (
@@ -762,9 +760,6 @@ const ChessApp = () => {
                     fontWeight: 'bold',
                     textShadow: textOutline,
                     color: pieceColor,
-                    WebkitTextFillColor: textFillColor,
-                    WebkitTextStrokeWidth: piece && piece.color === 'white' ? '0.5px' : '0px',
-                    WebkitTextStrokeColor: piece && piece.color === 'white' ? '#000000' : 'transparent',
                     transition: 'background-color 0.08s linear',
                     lineHeight: '1',
                     position: 'relative',
