@@ -534,6 +534,13 @@ const ChessApp = () => {
       return;  // Don't continue until promotion is chosen
     }
 
+    // ✅ CHECK IF USER PUT AI IN CHECKMATE
+    if (isCheckmate(newBoard, 'black')) {
+      setGameStatus('white_wins');
+      setCurrentTurn('black');
+      return;
+    }
+
     setCurrentTurn('black');
 
     // ✅ Add 1 second delay before AI plays
@@ -1228,7 +1235,7 @@ const ChessApp = () => {
 
           {gameStatus !== 'ongoing' && (
             <div style={{
-              padding: '20px',
+              padding: '30px',
               backgroundColor: gameStatus === 'white_wins' ? '#27ae60' : '#e74c3c',
               borderRadius: '8px',
               textAlign: 'center',
@@ -1236,8 +1243,20 @@ const ChessApp = () => {
               fontSize: '24px',
               fontWeight: 'bold'
             }}>
-              {gameStatus === 'white_wins' && '🎉 YOU WIN! 🎉'}
-              {gameStatus === 'black_wins' && '😢 AI WINS 😢'}
+              {gameStatus === 'white_wins' && (
+                <div>
+                  <div style={{ fontSize: '48px', marginBottom: '10px' }}>🎉</div>
+                  <div style={{ fontSize: '32px', marginBottom: '10px' }}>YOU WIN!</div>
+                  <div style={{ fontSize: '16px', marginTop: '10px', fontWeight: 'normal' }}>Checkmate! AI is defeated!</div>
+                </div>
+              )}
+              {gameStatus === 'black_wins' && (
+                <div>
+                  <div style={{ fontSize: '48px', marginBottom: '10px' }}>😢</div>
+                  <div style={{ fontSize: '32px', marginBottom: '10px' }}>AI WINS!</div>
+                  <div style={{ fontSize: '16px', marginTop: '10px', fontWeight: 'normal' }}>Checkmate! You are defeated!</div>
+                </div>
+              )}
             </div>
           )}
 
