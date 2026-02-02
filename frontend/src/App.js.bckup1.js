@@ -524,10 +524,8 @@ const ChessApp = () => {
     setLegalMoves([]);
     setCurrentTurn('black');
 
-    // ✅ Add 1 second delay before AI plays
-    setTimeout(() => {
-      makeAIMove(newBoard, [...moveHistory, moveNotation]);
-    }, 1000);
+    // Call AI immediately - no delay
+    makeAIMove(newBoard, [...moveHistory, moveNotation]);
   };
 
   const makeAIMove = (boardState, moves) => {
