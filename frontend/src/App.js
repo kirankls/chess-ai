@@ -8,17 +8,6 @@ const ChessApp = () => {
   const [password, setPassword] = useState('');
   const [email, setEmail] = useState('');
   const [isRegistering, setIsRegistering] = useState(false);
-  const [loginError, setLoginError] = useState('');
-  
-  // ✅ Account storage in localStorage
-  const [accounts, setAccounts] = useState(() => {
-    try {
-      const saved = localStorage.getItem('chessAccounts');
-      return saved ? JSON.parse(saved) : {};
-    } catch (e) {
-      return {};
-    }
-  });
 
   // Navigation
   const [screenMode, setScreenMode] = useState('menu');
@@ -78,97 +67,6 @@ const ChessApp = () => {
   useEffect(() => {
     loadLeaderboard();
   }, []);
-
-  // ✅ SAVE ACCOUNTS TO LOCALSTORAGE
-  const saveAccounts = (newAccounts) => {
-    try {
-      localStorage.setItem('chessAccounts', JSON.stringify(newAccounts));
-      setAccounts(newAccounts);
-    } catch (e) {
-      console.log('Error saving accounts:', e);
-    }
-  };
-
-  // ✅ HANDLE REGISTRATION
-  const handleRegister = () => {
-    setLoginError('');
-
-    // Validation
-    if (!username || !password || !email) {
-      setLoginError('All fields are required');
-      return;
-    }
-    if (username.length < 3) {
-      setLoginError('Username must be at least 3 characters');
-      return;
-    }
-    if (password.length < 4) {
-      setLoginError('Password must be at least 4 characters');
-      return;
-    }
-    if (!email.includes('@')) {
-      setLoginError('Please enter a valid email');
-      return;
-    }
-    if (accounts[username]) {
-      setLoginError('Username already exists');
-      return;
-    }
-
-    // Create new account
-    const newAccounts = {
-      ...accounts,
-      [username]: { password, email, createdAt: new Date().toISOString() }
-    };
-    saveAccounts(newAccounts);
-
-    // Auto-login after registration
-    setIsLoggedIn(true);
-    setCurrentPlayerInfo({ username, email });
-    setUsername('');
-    setPassword('');
-    setEmail('');
-    setIsRegistering(false);
-  };
-
-  // ✅ HANDLE LOGIN
-  const handleLogin = () => {
-    setLoginError('');
-
-    // Validation
-    if (!username || !password) {
-      setLoginError('Please enter username and password');
-      return;
-    }
-
-    const account = accounts[username];
-    if (!account) {
-      setLoginError('Username not found');
-      return;
-    }
-
-    if (account.password !== password) {
-      setLoginError('Incorrect password');
-      return;
-    }
-
-    // Login successful
-    setIsLoggedIn(true);
-    setCurrentPlayerInfo({ username, email: account.email });
-    setUsername('');
-    setPassword('');
-  };
-
-  // ✅ HANDLE LOGOUT
-  const handleLogout = () => {
-    setIsLoggedIn(false);
-    setCurrentPlayerInfo(null);
-    setUsername('');
-    setPassword('');
-    setEmail('');
-    setIsRegistering(false);
-    setLoginError('');
-  };
 
   function initializeBoard() {
     const board = Array(8).fill(null).map(() => Array(8).fill(null));
@@ -582,7 +480,6 @@ const ChessApp = () => {
     let bestMove = null;
     let bestValue = -Infinity;
     
-    // ✅ OPTIMIZED: Reduced depth for FAST response (no freezing!)
     const depths = { easy: 1, medium: 2, hard: 3 };
     const maxDepth = depths[difficulty];
 
@@ -593,29 +490,16 @@ const ChessApp = () => {
         if (piece && piece.color === 'black') {
           const legalMoves = getLegalMoves(boardState, r, c);
           for (let move of legalMoves) {
-            // ✅ Score moves for intelligent ordering
-            const score = scoreMoveQuality(boardState, r, c, move[0], move[1]);
-            moves.push({ from: [r, c], to: move, score: score });
+            moves.push({ from: [r, c], to: move, score: 0 });
           }
         }
       }
     }
 
-    // ✅ Sort by move quality (best first)
-    moves.sort((a, b) => b.score - a.score);
-    
-    // ✅ LIMIT MOVES FOR SPEED
-    let limit;
-    if (difficulty === 'easy') {
-      limit = 5;
-    } else if (difficulty === 'medium') {
-      limit = 8;
-    } else {
-      // Hard: top quality moves only
-      limit = 10;
-    }
+    moves.sort(() => Math.random() - 0.5);
+    const limit = Math.min(moves.length, difficulty === 'easy' ? 5 : difficulty === 'medium' ? 10 : moves.length);
 
-    for (let i = 0; i < Math.min(limit, moves.length); i++) {
+    for (let i = 0; i < limit; i++) {
       const moveObj = moves[i];
       const newBoard = boardState.map(r => [...r]);
       const piece = newBoard[moveObj.from[0]][moveObj.from[1]];
@@ -633,71 +517,11 @@ const ChessApp = () => {
     return bestMove;
   };
 
-  // ✅ ENHANCED: Intelligent move scoring for move ordering
-  const scoreMoveQuality = (boardState, fromR, fromC, toR, toC) => {
-    let score = 0;
-    const piece = boardState[fromR][fromC];
-    const target = boardState[toR][toC];
-    const pieceValues = { pawn: 100, knight: 320, bishop: 330, rook: 500, queen: 900, king: 0 };
-
-    // Checkmate is best possible move
-    const testBoard = boardState.map(r => [...r]);
-    testBoard[toR][toC] = piece;
-    testBoard[fromR][fromC] = null;
-    
-    if (isCheckmate(testBoard, 'white')) {
-      return 100000;  // Highest priority
-    }
-
-    // Captures: prioritize by captured piece value
-    if (target) {
-      score += pieceValues[target.type] * 100;
-    }
-
-    // Checks are strong moves (500 points)
-    if (isKingInCheck(testBoard, 'white')) {
-      score += 500;
-    }
-
-    // Pawn promotions are excellent (800 points)
-    if (piece.type === 'pawn' && toR === 7) {
-      score += 800;
-    }
-
-    // Center control: d4, e4, d5, e5 (50 points each)
-    const centerSquares = [[3, 3], [3, 4], [4, 3], [4, 4]];
-    if (centerSquares.some(sq => sq[0] === toR && sq[1] === toC)) {
-      score += 50;
-    }
-
-    // Pawn advancement bonus (10 points per rank)
-    if (piece.type === 'pawn') {
-      score += (6 - toR) * 10;
-    }
-
-    // Knight development (25 points)
-    if (piece.type === 'knight') {
-      score += 25;
-    }
-
-    // Bishop development (25 points)
-    if (piece.type === 'bishop') {
-      score += 25;
-    }
-
-    return score;
-  };
-
-  // ✅ Transposition table for memoization (speeds up AI)
-  const transpositionTable = useRef({});
-
   const minimax = (boardState, depth, alpha, beta, isMaximizing, maxDepth) => {
-    // ✅ Early termination at max depth
     if (depth === maxDepth) {
       return evaluatePosition(boardState);
     }
 
-    // ✅ Check for immediate checkmate/stalemate
     if (isCheckmate(boardState, 'white')) return 10000 + depth;
     if (isCheckmate(boardState, 'black')) return -10000 - depth;
 
@@ -711,16 +535,11 @@ const ChessApp = () => {
         if (piece && piece.color === color) {
           const legalMoves = getLegalMoves(boardState, r, c);
           for (let move of legalMoves) {
-            // ✅ Score moves for better pruning
-            const score = scoreMoveQuality(boardState, r, c, move[0], move[1]);
-            moves.push({ from: [r, c], to: move, score: score });
+            moves.push({ from: [r, c], to: move });
           }
         }
       }
     }
-
-    // ✅ Sort moves by quality (best first = better pruning)
-    moves.sort((a, b) => b.score - a.score);
 
     for (let moveObj of moves) {
       const newBoard = boardState.map(r => [...r]);
@@ -738,7 +557,6 @@ const ChessApp = () => {
         beta = Math.min(beta, value);
       }
 
-      // ✅ Alpha-beta pruning (skips unnecessary branches)
       if (beta <= alpha) break;
     }
 
@@ -749,7 +567,6 @@ const ChessApp = () => {
     let score = 0;
     const pieceValues = { pawn: 100, knight: 320, bishop: 330, rook: 500, queen: 900, king: 0 };
 
-    // ✅ ENHANCED: Material value scoring
     for (let r = 0; r < 8; r++) {
       for (let c = 0; c < 8; c++) {
         const piece = boardState[r][c];
@@ -759,75 +576,6 @@ const ChessApp = () => {
         }
       }
     }
-
-    // ✅ ENHANCED: Positional bonuses
-    for (let r = 0; r < 8; r++) {
-      for (let c = 0; c < 8; c++) {
-        const piece = boardState[r][c];
-        if (!piece) continue;
-
-        const multiplier = piece.color === 'black' ? 1 : -1;
-
-        // Pawn positioning
-        if (piece.type === 'pawn') {
-          // Pawns advanced in position are better
-          const advancement = piece.color === 'black' ? r : (7 - r);
-          score += multiplier * advancement * 10;
-          
-          // Central pawns are better
-          if (c >= 3 && c <= 4) {
-            score += multiplier * 20;
-          }
-        }
-
-        // Knight positioning
-        if (piece.type === 'knight') {
-          // Knights in center are better
-          const distFromCenter = Math.abs(c - 3.5) + Math.abs(r - 3.5);
-          score += multiplier * (10 - distFromCenter * 3);
-        }
-
-        // Bishop positioning
-        if (piece.type === 'bishop') {
-          // Bishops on long diagonals are valuable
-          const distFromEdge = Math.min(c, 7 - c, r, 7 - r);
-          score += multiplier * distFromEdge * 5;
-        }
-
-        // Rook positioning
-        if (piece.type === 'rook') {
-          // Rooks on open files are better
-          let openFile = true;
-          for (let checkR = 0; checkR < 8; checkR++) {
-            if (boardState[checkR][c] && boardState[checkR][c].type === 'pawn') {
-              openFile = false;
-              break;
-            }
-          }
-          if (openFile) {
-            score += multiplier * 30;
-          }
-        }
-
-        // King safety (early game: king on back rank better)
-        if (piece.type === 'king') {
-          const kingRow = piece.color === 'black' ? r : (7 - r);
-          if (kingRow <= 1) {
-            score += multiplier * 20;  // King safely tucked away
-          }
-        }
-      }
-    }
-
-    // ✅ ENHANCED: Bonus for center control
-    const centerSquares = [[3, 3], [3, 4], [4, 3], [4, 4]];
-    for (let [r, c] of centerSquares) {
-      const piece = boardState[r][c];
-      if (piece) {
-        score += piece.color === 'black' ? 30 : -30;
-      }
-    }
-
     return score;
   };
 
@@ -959,29 +707,20 @@ const ChessApp = () => {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: '#0a0a0a',
-        padding: '20px'
+        backgroundColor: '#0a0a0a'
       }}>
         <div style={{
           backgroundColor: '#1a1a2e',
           padding: '40px',
           borderRadius: '10px',
-          textAlign: 'center',
-          width: '100%',
-          maxWidth: '400px'
+          textAlign: 'center'
         }}>
-          <h1 style={{ color: '#f39c12', marginBottom: '10px', fontSize: '36px' }}>♔ CHESS MASTER</h1>
-          <p style={{ color: '#aaa', marginBottom: '30px', fontSize: '14px' }}>
-            {isRegistering ? 'Create a new account' : 'Login to play'}
-          </p>
-
-          {/* Username Input */}
+          <h1 style={{ color: '#f39c12', marginBottom: '30px', fontSize: '36px' }}>♔ CHESS MASTER</h1>
           <input
             type="text"
             placeholder="Username"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
-            onKeyPress={(e) => e.key === 'Enter' && (isRegistering ? handleRegister() : handleLogin())}
             style={{
               width: '100%',
               padding: '12px',
@@ -990,19 +729,15 @@ const ChessApp = () => {
               border: 'none',
               backgroundColor: '#252541',
               color: '#eee',
-              boxSizing: 'border-box',
-              fontSize: '14px'
+              boxSizing: 'border-box'
             }}
           />
-
-          {/* Email Input (Registration Only) */}
           {isRegistering && (
             <input
               type="email"
               placeholder="Email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              onKeyPress={(e) => e.key === 'Enter' && handleRegister()}
               style={{
                 width: '100%',
                 padding: '12px',
@@ -1011,50 +746,31 @@ const ChessApp = () => {
                 border: 'none',
                 backgroundColor: '#252541',
                 color: '#eee',
-                boxSizing: 'border-box',
-                fontSize: '14px'
+                boxSizing: 'border-box'
               }}
             />
           )}
-
-          {/* Password Input */}
           <input
             type="password"
             placeholder="Password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            onKeyPress={(e) => e.key === 'Enter' && (isRegistering ? handleRegister() : handleLogin())}
             style={{
               width: '100%',
               padding: '12px',
-              marginBottom: '15px',
+              marginBottom: '20px',
               borderRadius: '5px',
               border: 'none',
               backgroundColor: '#252541',
               color: '#eee',
-              boxSizing: 'border-box',
-              fontSize: '14px'
+              boxSizing: 'border-box'
             }}
           />
-
-          {/* Error Message */}
-          {loginError && (
-            <div style={{
-              backgroundColor: '#e74c3c',
-              color: 'white',
-              padding: '12px',
-              borderRadius: '5px',
-              marginBottom: '15px',
-              fontSize: '13px',
-              fontWeight: 'bold'
-            }}>
-              ⚠️ {loginError}
-            </div>
-          )}
-
-          {/* Login/Register Button */}
           <button
-            onClick={() => isRegistering ? handleRegister() : handleLogin()}
+            onClick={() => {
+              setIsLoggedIn(true);
+              setCurrentPlayerInfo({ username });
+            }}
             style={{
               width: '100%',
               padding: '12px',
@@ -1064,50 +780,25 @@ const ChessApp = () => {
               borderRadius: '5px',
               cursor: 'pointer',
               fontWeight: 'bold',
-              marginBottom: '10px',
-              fontSize: '16px',
-              transition: 'background-color 0.2s'
+              marginBottom: '10px'
             }}
-            onMouseEnter={(e) => e.target.style.backgroundColor = '#e67e22'}
-            onMouseLeave={(e) => e.target.style.backgroundColor = '#f39c12'}
           >
-            {isRegistering ? '📝 CREATE ACCOUNT' : '🔓 LOGIN'}
+            {isRegistering ? 'REGISTER' : 'LOGIN'}
           </button>
-
-          {/* Toggle Registration/Login */}
           <button
-            onClick={() => {
-              setIsRegistering(!isRegistering);
-              setLoginError('');
-              setUsername('');
-              setPassword('');
-              setEmail('');
-            }}
+            onClick={() => setIsRegistering(!isRegistering)}
             style={{
               width: '100%',
               padding: '12px',
-              backgroundColor: '#3498db',
+              backgroundColor: '#555',
               color: 'white',
               border: 'none',
               borderRadius: '5px',
-              cursor: 'pointer',
-              fontWeight: 'bold',
-              fontSize: '14px',
-              transition: 'background-color 0.2s'
+              cursor: 'pointer'
             }}
-            onMouseEnter={(e) => e.target.style.backgroundColor = '#2980b9'}
-            onMouseLeave={(e) => e.target.style.backgroundColor = '#3498db'}
           >
-            {isRegistering ? '← BACK TO LOGIN' : '+ CREATE NEW ACCOUNT'}
+            {isRegistering ? 'Back to Login' : 'Create Account'}
           </button>
-
-          {/* Info Message */}
-          <p style={{ color: '#666', marginTop: '20px', fontSize: '12px' }}>
-            {isRegistering 
-              ? '✓ Username: 3+ characters\n✓ Password: 4+ characters\n✓ Email: valid address'
-              : '👉 Need an account? Click "Create New Account"'
-            }
-          </p>
         </div>
       </div>
     );
@@ -1123,107 +814,11 @@ const ChessApp = () => {
         color: '#fff'
       }}>
         <div style={{ maxWidth: '800px', margin: '0 auto' }}>
-          {/* User Info */}
-          <div style={{
-            backgroundColor: '#1a1a2e',
-            padding: '15px',
-            borderRadius: '8px',
-            marginBottom: '30px',
-            textAlign: 'center',
-            borderLeft: '4px solid #f39c12'
-          }}>
-            <p style={{ margin: '0', color: '#aaa', fontSize: '12px' }}>Logged in as</p>
-            <p style={{ margin: '5px 0 0 0', color: '#f39c12', fontSize: '18px', fontWeight: 'bold' }}>
-              👤 {currentPlayer?.username}
-            </p>
-          </div>
-
-          <h1 style={{ textAlign: 'center', color: '#f39c12', marginBottom: '30px', fontSize: '36px' }}>♔ CHESS MASTER</h1>
-
-          {/* Main Buttons */}
-          <button 
-            onClick={() => { setGameMode('difficulty'); setScreenMode('game'); }} 
-            style={{ 
-              width: '100%', 
-              padding: '20px', 
-              backgroundColor: '#f39c12', 
-              color: 'white', 
-              border: 'none', 
-              borderRadius: '8px', 
-              fontSize: '18px', 
-              fontWeight: 'bold', 
-              cursor: 'pointer', 
-              marginBottom: '15px',
-              transition: 'background-color 0.2s'
-            }}
-            onMouseEnter={(e) => e.target.style.backgroundColor = '#e67e22'}
-            onMouseLeave={(e) => e.target.style.backgroundColor = '#f39c12'}
-          >
-            ⚔️ PLAY vs AI
-          </button>
-
-          <button 
-            onClick={() => setScreenMode('training')} 
-            style={{ 
-              width: '100%', 
-              padding: '20px', 
-              backgroundColor: '#3498db', 
-              color: 'white', 
-              border: 'none', 
-              borderRadius: '8px', 
-              fontSize: '18px', 
-              fontWeight: 'bold', 
-              cursor: 'pointer', 
-              marginBottom: '15px',
-              transition: 'background-color 0.2s'
-            }}
-            onMouseEnter={(e) => e.target.style.backgroundColor = '#2980b9'}
-            onMouseLeave={(e) => e.target.style.backgroundColor = '#3498db'}
-          >
-            📚 TRAINING
-          </button>
-
-          <button 
-            onClick={() => setScreenMode('leaderboard')} 
-            style={{ 
-              width: '100%', 
-              padding: '20px', 
-              backgroundColor: '#2ecc71', 
-              color: 'white', 
-              border: 'none', 
-              borderRadius: '8px', 
-              fontSize: '18px', 
-              fontWeight: 'bold', 
-              cursor: 'pointer', 
-              marginBottom: '25px',
-              transition: 'background-color 0.2s'
-            }}
-            onMouseEnter={(e) => e.target.style.backgroundColor = '#27ae60'}
-            onMouseLeave={(e) => e.target.style.backgroundColor = '#2ecc71'}
-          >
-            🏆 LEADERBOARD
-          </button>
-
-          {/* Logout Button */}
-          <button 
-            onClick={handleLogout} 
-            style={{ 
-              width: '100%', 
-              padding: '15px', 
-              backgroundColor: '#e74c3c', 
-              color: 'white', 
-              border: 'none', 
-              borderRadius: '8px', 
-              fontSize: '16px', 
-              fontWeight: 'bold', 
-              cursor: 'pointer',
-              transition: 'background-color 0.2s'
-            }}
-            onMouseEnter={(e) => e.target.style.backgroundColor = '#c0392b'}
-            onMouseLeave={(e) => e.target.style.backgroundColor = '#e74c3c'}
-          >
-            🔓 LOGOUT
-          </button>
+          <h1 style={{ textAlign: 'center', color: '#f39c12', marginBottom: '40px', fontSize: '48px' }}>♔ CHESS MASTER</h1>
+          <button onClick={() => { setGameMode('difficulty'); setScreenMode('game'); }} style={{ width: '100%', padding: '20px', backgroundColor: '#f39c12', color: 'white', border: 'none', borderRadius: '8px', fontSize: '18px', fontWeight: 'bold', cursor: 'pointer', marginBottom: '15px' }}>⚔️ PLAY vs AI</button>
+          <button onClick={() => setScreenMode('training')} style={{ width: '100%', padding: '20px', backgroundColor: '#3498db', color: 'white', border: 'none', borderRadius: '8px', fontSize: '18px', fontWeight: 'bold', cursor: 'pointer', marginBottom: '15px' }}>📚 TRAINING</button>
+          <button onClick={() => setScreenMode('leaderboard')} style={{ width: '100%', padding: '20px', backgroundColor: '#2ecc71', color: 'white', border: 'none', borderRadius: '8px', fontSize: '18px', fontWeight: 'bold', cursor: 'pointer', marginBottom: '15px' }}>🏆 LEADERBOARD</button>
+          <button onClick={() => setIsLoggedIn(false)} style={{ width: '100%', padding: '15px', backgroundColor: '#e74c3c', color: 'white', border: 'none', borderRadius: '8px', fontSize: '16px', fontWeight: 'bold', cursor: 'pointer' }}>LOGOUT</button>
         </div>
       </div>
     );
